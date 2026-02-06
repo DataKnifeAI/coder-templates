@@ -46,7 +46,7 @@ push-to-coder:
     - test:dkai-dev
   before_script:
     - apt-get update && apt-get install -y curl ca-certificates
-    - curl -fsSL https://coder.com/install.sh | sh -s -- -y
+    - curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     - coder version
   script:
     - |
