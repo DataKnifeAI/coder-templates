@@ -103,10 +103,13 @@ resource "coder_agent" "main" {
       curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
       sudo apt-get install -y nodejs
     fi
-    # Install Cursor CLI (https://cursor.com/cli)
-    if ! command -v agent >/dev/null 2>&1; then
-      curl -fsSL https://cursor.com/install | bash
+    # Install Cursor CLI (https://cursor.com/cli) as coder user
+    if [ ! -f /home/coder/.local/bin/agent ]; then
+      sudo -u coder bash -c 'curl -fsSL https://cursor.com/install | bash'
     fi
+    # Add ~/.local/bin to PATH for coder user
+    CURSOR_PATH='export PATH="$HOME/.local/bin:$PATH"'
+    grep -qF '.local/bin' /home/coder/.bashrc 2>/dev/null || echo "$CURSOR_PATH" >> /home/coder/.bashrc
     # Agent ready for Cursor IDE and CLI
   EOT
 
