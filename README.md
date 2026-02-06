@@ -55,6 +55,24 @@ Common customizations:
 
 See [Coder's extending templates guide](https://coder.com/docs/admin/templates/extending-templates) for details.
 
+## CI/CD
+
+GitHub Actions runs on every push and pull request:
+
+- **Test** — `terraform init`, `terraform validate`, and `terraform fmt -check` for each template
+- **Push to GitLab** — After tests pass on `main`, syncs to a GitLab mirror (optional)
+
+### GitLab Mirror Setup
+
+To enable pushing to GitLab after tests pass, add these repository secrets:
+
+| Secret | Description |
+|-------|-------------|
+| `GITLAB_REPO_SSH_URL` | SSH URL (e.g. `git@gitlab.com:org/coder-templates.git`) |
+| `GITLAB_SSH_KEY` | Private SSH key with write access to the GitLab repo |
+
+Create a [GitLab Deploy Key](https://docs.gitlab.com/ee/user/project/deploy_keys/) or use a [Personal Access Token](https://docs.gitlab.com/ee/user/profile/personal_access_tokens/) with `write_repository` scope (as SSH key).
+
 ## Links
 
 - [Coder Documentation](https://coder.com/docs)
