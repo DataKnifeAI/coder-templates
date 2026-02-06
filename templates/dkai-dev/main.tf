@@ -167,14 +167,8 @@ module "cursor" {
   folder   = "/home/coder"
 }
 
-# Cursor CLI - run Cursor Agent CLI for AI pair programming
-# https://registry.coder.com/modules/coder-labs/cursor-cli
-module "cursor_cli" {
-  source   = "registry.coder.com/coder-labs/cursor-cli/coder"
-  version  = "0.3.0"
-  agent_id = coder_agent.main.id
-  folder   = "/home/coder"
-}
+# Cursor CLI removed — required subdomain (CODER_WILDCARD_ACCESS_URL).
+# Re-add when cursor-cli module supports agentapi_subdomain = false.
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
   metadata {

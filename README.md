@@ -11,7 +11,7 @@ This repository contains reusable Coder templates for provisioning development w
 | Template      | Description                                                                 |
 |---------------|-----------------------------------------------------------------------------|
 | **kubernetes** | Kubernetes Deployments with code-server — base template for K8s workspaces |
-| **dkai-dev**   | Kubernetes workspaces with Cursor IDE & CLI — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk |
+| **dkai-dev**   | Kubernetes workspaces with Cursor IDE — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk (no subdomain required) |
 
 ## References
 
@@ -83,6 +83,7 @@ Common customizations:
 See [Coder's extending templates guide](https://coder.com/docs/admin/templates/extending-templates) for details.
 
 - **[Build Parameters](docs/build-parameters.md)** — Reference for template parameters (types, validation, mutability)
+- **[Wildcard Subdomain](docs/wildcard-subdomain.md)** — Why workspaces need it, how to check via CLI
 
 ## CI/CD
 
