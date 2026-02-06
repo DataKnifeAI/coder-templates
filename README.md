@@ -62,16 +62,24 @@ GitHub Actions runs on every push and pull request:
 - **Test** — `terraform init`, `terraform validate`, and `terraform fmt -check` for each template
 - **Push to GitLab** — After tests pass on `main`, syncs to a GitLab mirror (optional)
 
-### GitLab Mirror Setup
+### GitLab Mirror Setup (GitHub Actions)
 
-To enable pushing to GitLab after tests pass, add these repository secrets:
+To enable pushing to GitLab after tests pass, add this repository secret (same as [freya](https://github.com/DataKnifeAI/freya)):
 
 | Secret | Description |
 |-------|-------------|
-| `GITLAB_REPO_SSH_URL` | SSH URL (e.g. `git@gitlab.com:org/coder-templates.git`) |
-| `GITLAB_SSH_KEY` | Private SSH key with write access to the GitLab repo |
+| `GITLAB_TOKEN` | GitLab [Personal Access Token](https://docs.gitlab.com/ee/user/profile/personal_access_tokens/) or [Project Access Token](https://docs.gitlab.com/ee/user/project/settings/project_access_tokens.html) with `write_repository` scope |
 
-Create a [GitLab Deploy Key](https://docs.gitlab.com/ee/user/project/deploy_keys/) or use a [Personal Access Token](https://docs.gitlab.com/ee/user/profile/personal_access_tokens/) with `write_repository` scope (as SSH key).
+Mirror URL: `https://gitlab.com/dk-raas/dkai/devops/coder-templates`
+
+### GitLab CI (Push to Coder)
+
+The GitLab pipeline tests templates and pushes updates to Coder when changes land on `main`. Configure these CI/CD variables (Settings > CI/CD > Variables):
+
+| Variable | Type | Description |
+|----------|------|-------------|
+| `CODER_URL` | Variable | Coder instance URL (e.g. `https://coder.dataknife.net`) |
+| `CODER_SESSION_TOKEN` | Masked | Long-lived token: `coder token create --lifetime 8760h --name "GitLab CI"` |
 
 ## Links
 

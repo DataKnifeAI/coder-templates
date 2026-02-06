@@ -52,9 +52,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Sync to GitLab
-        uses: adambirds/sync-github-to-gitlab-action@v1.1.0
-        with:
-          destination_repository: ${{ secrets.GITLAB_REPO_SSH_URL }}
-          destination_branch_name: main
-          destination_ssh_key: ${{ secrets.GITLAB_SSH_KEY }}
+      - name: Push to GitLab
+        env:
+          GITLAB_TOKEN: ${{ secrets.GITLAB_TOKEN }}
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git remote remove gitlab 2>/dev/null || true
+          git remote add gitlab https://gitlab.com/dk-raas/dkai/devops/coder-templates.git
+          git config credential.helper '!f() { echo "username=oauth2"; echo "password=${GITLAB_TOKEN}"; }; f'
+          git fetch gitlab main 2>/dev/null || true
+          git push gitlab HEAD:main --force

@@ -1,0 +1,56 @@
+# GitLab CI for Coder Templates
+# Tests Terraform configs and pushes to Coder when changes land on main
+#
+# Required CI/CD variables (Settings > CI/CD > Variables):
+#   CODER_URL          - Coder instance URL (e.g. https://coder.dataknife.net)
+#   CODER_SESSION_TOKEN - Long-lived token: coder token create --lifetime 8760h --name "GitLab CI"
+
+stages:
+  - test
+  - deploy
+
+variables:
+  TERRAFORM_VERSION: "1.14.1"
+
+.test_template: &test_template
+  stage: test
+  image:
+    name: hashicorp/terraform:${TERRAFORM_VERSION}
+    entrypoint: [""]
+  before_script:
+    - cd templates/${TEMPLATE_NAME}
+  script:
+    - terraform init -backend=false
+    - terraform validate
+    - terraform fmt -check -recursive -diff
+
+test:kubernetes:
+  <<: *test_template
+  variables:
+    TEMPLATE_NAME: kubernetes
+
+test:dkai-dev:
+  <<: *test_template
+  variables:
+    TEMPLATE_NAME: dkai-dev
+
+push-to-coder:
+  stage: deploy
+  image: ubuntu:24.04
+  needs:
+    - test:kubernetes
+    - test:dkai-dev
+  before_script:
+    - apt-get update && apt-get install -y curl ca-certificates
+    - curl -fsSL https://coder.com/install.sh | sh -s -- -y
+    - coder version
+  script:
+    - |
+      for template in kubernetes dkai-dev; do
+        if [ -d "templates/$template" ]; then
+          echo "Pushing template: $template"
+          coder templates push "$template" --directory "templates/$template" -y
+        fi
+      done
+  rules:
+    - if: $CI_COMMIT_BRANCH == "main"
