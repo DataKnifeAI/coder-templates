@@ -97,6 +97,10 @@ resource "coder_agent" "main" {
   }
   startup_script = <<-EOT
     set -e
+    # Install Cursor CLI (https://cursor.com/cli)
+    if ! command -v agent >/dev/null 2>&1; then
+      curl -fsSL https://cursor.com/install | bash
+    fi
     # Agent ready for Cursor IDE and CLI
   EOT
 
@@ -166,9 +170,6 @@ module "cursor" {
   agent_id = coder_agent.main.id
   folder   = "/home/coder"
 }
-
-# Cursor CLI removed — required subdomain (CODER_WILDCARD_ACCESS_URL).
-# Re-add when cursor-cli module supports agentapi_subdomain = false.
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
   metadata {

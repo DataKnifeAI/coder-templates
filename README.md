@@ -11,7 +11,7 @@ This repository contains reusable Coder templates for provisioning development w
 | Template      | Description                                                                 |
 |---------------|-----------------------------------------------------------------------------|
 | **kubernetes** | Kubernetes Deployments with code-server — base template for K8s workspaces |
-| **dkai-dev**   | Kubernetes workspaces with Cursor IDE — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk (no subdomain required) |
+| **dkai-dev**   | Kubernetes workspaces with Cursor IDE & CLI — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk (no subdomain required) |
 
 ## References
 

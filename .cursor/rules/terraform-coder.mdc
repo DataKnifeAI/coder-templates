@@ -9,7 +9,7 @@ alwaysApply: false
 ## Project Context
 
 - Custom Coder workspace templates for DataKnife
-- Templates: `kubernetes` (code-server), `dkai-dev` (Cursor IDE only, no subdomain)
+- Templates: `kubernetes` (code-server), `dkai-dev` (Cursor IDE + CLI via startup script, no subdomain)
 - Validate with `make test` before committing
 
 ## Coder Provider
