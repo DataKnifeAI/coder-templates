@@ -14,6 +14,8 @@ variables:
 
 .test_template: &test_template
   stage: test
+  tags:
+    - kubernetes
   image:
     name: hashicorp/terraform:${TERRAFORM_VERSION}
     entrypoint: [""]
@@ -36,6 +38,8 @@ test:dkai-dev:
 
 push-to-coder:
   stage: deploy
+  tags:
+    - kubernetes
   image: ubuntu:24.04
   needs:
     - test:kubernetes
