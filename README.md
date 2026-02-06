@@ -6,6 +6,13 @@ Custom [Coder](https://coder.com) workspace templates for DataKnife. Templates a
 
 This repository contains reusable Coder templates for provisioning development workspaces. Use these as starting points or import them directly into your Coder deployment.
 
+## Templates
+
+| Template      | Description                                                                 |
+|---------------|-----------------------------------------------------------------------------|
+| **kubernetes** | Kubernetes Deployments with code-server — base template for K8s workspaces |
+| **dkai-dev**   | Kubernetes workspaces with Cursor IDE & CLI — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk |
+
 ## References
 
 - **[Coder Registry](https://registry.coder.com)** — Explore official and community templates
@@ -26,6 +33,21 @@ This repository contains reusable Coder templates for provisioning development w
 2. **From CLI**: `coder templates create <name> --directory ./path/to/template`
 3. **From Terraform**: Reference this repo as a module or copy the template files
 
+### Local Validation
+
+Validate templates locally before pushing:
+
+```bash
+make test
+```
+
+| Target      | Description                                      |
+|-------------|--------------------------------------------------|
+| `make test` | Init, validate, and format-check all templates   |
+| `make fmt`  | Format Terraform files                           |
+| `make clean`| Remove `.terraform` and lock files                |
+| `make debug`| Run tests with verbose Terraform output (`V=1`)  |
+
 ### Key Concepts
 
 - **Templates** = Terraform configs that provision workspace infrastructure
@@ -37,11 +59,16 @@ This repository contains reusable Coder templates for provisioning development w
 ```
 coder-templates/
 ├── README.md
+├── Makefile           # Local validation (make test)
+├── docs/
+│   └── build-parameters.md
 └── templates/
-    └── <template-name>/
-        ├── main.tf      # Terraform configuration
-        ├── variables.tf  # Input variables
-        └── README.md    # Template-specific docs
+    ├── kubernetes/
+    │   ├── main.tf
+    │   └── README.md
+    └── dkai-dev/
+        ├── main.tf
+        └── README.md
 ```
 
 ## Extending Templates
@@ -50,10 +77,12 @@ Common customizations:
 
 - **Images** — Use custom Docker images with preinstalled tools
 - **Parameters** — Add disk size, instance type, region options
-- **IDEs** — Add JetBrains, RDP, or other IDE support
+- **IDEs** — Add JetBrains, RDP, Cursor, or other IDE support
 - **Persistence** — Configure volume mounts and backup behavior
 
 See [Coder's extending templates guide](https://coder.com/docs/admin/templates/extending-templates) for details.
+
+- **[Build Parameters](docs/build-parameters.md)** — Reference for template parameters (types, validation, mutability)
 
 ## CI/CD
 

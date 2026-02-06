@@ -1,7 +1,8 @@
 terraform {
   required_providers {
     coder = {
-      source = "coder/coder"
+      source  = "coder/coder"
+      version = ">= 2.12"
     }
     kubernetes = {
       source = "hashicorp/kubernetes"
@@ -46,34 +47,18 @@ data "coder_parameter" "cpu" {
     name  = "4 Cores"
     value = "4"
   }
-  option {
-    name  = "6 Cores"
-    value = "6"
-  }
-  option {
-    name  = "8 Cores"
-    value = "8"
-  }
 }
 
 data "coder_parameter" "memory" {
   name         = "memory"
   display_name = "Memory"
   description  = "The amount of memory in GB"
-  default      = "2"
+  default      = "4"
   icon         = "/icon/memory.svg"
   mutable      = true
   option {
-    name  = "2 GB"
-    value = "2"
-  }
-  option {
     name  = "4 GB"
     value = "4"
-  }
-  option {
-    name  = "6 GB"
-    value = "6"
   }
   option {
     name  = "8 GB"
@@ -84,14 +69,15 @@ data "coder_parameter" "memory" {
 data "coder_parameter" "home_disk_size" {
   name         = "home_disk_size"
   display_name = "Home disk size"
-  description  = "The size of the home disk in GB"
-  default      = "10"
+  description  = "The size of the home disk in GB (can only be increased after creation)"
+  default      = "50"
   type         = "number"
   icon         = "/emojis/1f4be.png"
-  mutable      = false
+  mutable      = true
   validation {
-    min = 1
-    max = 99999
+    min       = 50
+    max       = 100
+    monotonic = "increasing"
   }
 }
 
@@ -108,13 +94,7 @@ resource "coder_agent" "main" {
   arch           = "amd64"
   startup_script = <<-EOT
     set -e
-
-    # Install the latest code-server.
-    # Append "--version x.x.x" to install a specific version of code-server.
-    curl -fsSL https://code-server.dev/install.sh | sh -s -- --method=standalone --prefix=/tmp/code-server
-
-    # Start code-server in the background.
-    /tmp/code-server/bin/code-server --auth none --port 13337 >/tmp/code-server.log 2>&1 &
+    # Agent ready for Cursor IDE and CLI
   EOT
 
   # The following metadata blocks are optional. They are used to display
@@ -174,21 +154,23 @@ resource "coder_agent" "main" {
   }
 }
 
-# code-server
-resource "coder_app" "code-server" {
-  agent_id     = coder_agent.main.id
-  slug         = "code-server"
-  display_name = "code-server"
-  icon         = "/icon/code.svg"
-  url          = "http://localhost:13337?folder=/home/coder"
-  subdomain    = false
-  share        = "owner"
+# Cursor IDE - one-click button to launch Cursor Desktop
+# https://registry.coder.com/modules/coder/cursor
+module "cursor" {
+  count    = data.coder_workspace.me.start_count
+  source   = "registry.coder.com/coder/cursor/coder"
+  version  = "1.4.0"
+  agent_id = coder_agent.main.id
+  folder   = "/home/coder"
+}
 
-  healthcheck {
-    url       = "http://localhost:13337/healthz"
-    interval  = 3
-    threshold = 10
-  }
+# Cursor CLI - run Cursor Agent CLI for AI pair programming
+# https://registry.coder.com/modules/coder-labs/cursor-cli
+module "cursor_cli" {
+  source   = "registry.coder.com/coder-labs/cursor-cli/coder"
+  version  = "0.3.0"
+  agent_id = coder_agent.main.id
+  folder   = "/home/coder"
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
