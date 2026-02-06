@@ -1,0 +1,36 @@
+---
+description: Terraform and Coder template conventions
+globs: "**/*.tf"
+alwaysApply: false
+---
+
+# Coder Templates - Terraform Conventions
+
+## Project Context
+
+- Custom Coder workspace templates for DataKnife
+- Templates: `kubernetes` (code-server), `dkai-dev` (Cursor IDE & CLI)
+- Validate with `make test` before committing
+
+## Coder Provider
+
+- Use `coder/coder` provider (version >= 2.12 for Cursor CLI modules)
+- Reference: [Coder Terraform Provider](https://registry.terraform.io/providers/coder/coder/latest/docs)
+
+## Build Parameters
+
+- Use `data "coder_parameter"` for user-configurable options
+- See `docs/build-parameters.md` and [Coder Build Parameters](https://coder.com/docs/admin/templates/extending-templates/parameters)
+- For disk/volume params: use `mutable = true` with `monotonic = "increasing"` when size can only grow
+- Add `display_apps { vscode = false }` to `coder_agent` when using Cursor instead of VS Code
+
+## Registry Modules
+
+- **Cursor IDE**: `registry.coder.com/coder/cursor/coder` (version 1.4.0)
+- **Cursor CLI**: `registry.coder.com/coder-labs/cursor-cli/coder` (version 0.3.0)
+- Browse more at [Coder Registry](https://registry.coder.com)
+
+## Formatting
+
+- Run `make fmt` or `terraform fmt -recursive` before commit
+- CI runs `terraform fmt -check -recursive -diff`

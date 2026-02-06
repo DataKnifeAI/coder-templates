@@ -90,8 +90,11 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 resource "coder_agent" "main" {
-  os             = "linux"
-  arch           = "amd64"
+  os   = "linux"
+  arch = "amd64"
+  display_apps {
+    vscode = false
+  }
   startup_script = <<-EOT
     set -e
     # Agent ready for Cursor IDE and CLI

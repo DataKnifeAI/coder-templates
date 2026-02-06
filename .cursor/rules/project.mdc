@@ -1,0 +1,13 @@
+---
+description: Coder templates project overview
+alwaysApply: true
+---
+
+# Coder Templates
+
+Terraform-based Coder workspace templates for DataKnife.
+
+- **Templates**: `templates/kubernetes/`, `templates/dkai-dev/`
+- **Validation**: `make test` (init, validate, fmt-check)
+- **Docs**: `docs/build-parameters.md` — Coder parameter reference
+- **CI**: GitHub Actions + GitLab mirror; add new templates to `TEMPLATES` in Makefile and CI matrix
