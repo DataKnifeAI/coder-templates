@@ -31,23 +31,7 @@ The `codercom/enterprise-base:ubuntu` image does **not** include Node.js. Cursor
 
 **Fix:** The DKAI template installs Node.js 20 in the startup script so Cursor Server can use it.
 
-### 2. `SyntaxError: Unexpected token 'export'` (ES modules)
-
-Cursor Server's `server-main.js` uses ES module syntax (`export`), but Node.js treats `.js` as CommonJS by default. You may see:
-
-```
-(node:...) Warning: To load an ES module, set "type": "module" in the package.json or use the .mjs extension.
-SyntaxError: Unexpected token 'export'
-```
-
-**Fix:** Pre-create `~/.cursor-server/package.json` with `{"type":"module"}` so Node treats the server files as ES modules. The DKAI template does this in the startup script:
-
-```bash
-mkdir -p /home/coder/.cursor-server
-echo '{"type":"module"}' > /home/coder/.cursor-server/package.json
-```
-
-### 3. Network access (outbound)
+### 2. Network access (outbound)
 
 The workspace must reach `cursor.blob.core.windows.net` to download the server. If the cluster has network policies or no outbound internet:
 
@@ -56,7 +40,7 @@ The workspace must reach `cursor.blob.core.windows.net` to download the server. 
 curl -I https://cursor.blob.core.windows.net
 ```
 
-### 4. Disk space
+### 3. Disk space
 
 Ensure `/home/coder` and `/tmp` have space. Cursor Server writes to `~/.cursor-server/`.
 
@@ -64,7 +48,7 @@ Ensure `/home/coder` and `/tmp` have space. Cursor Server writes to `~/.cursor-s
 df -h /home/coder /tmp
 ```
 
-### 5. Architecture mismatch
+### 4. Architecture mismatch
 
 Verify the image matches Cursor's expected arch:
 
@@ -72,6 +56,21 @@ Verify the image matches Cursor's expected arch:
 uname -a
 # Should be x86_64 or aarch64
 ```
+
+### 5. Do not add `~/.cursor-server/package.json` with `"type":"module"`
+
+Adding `{"type":"module"}` to `~/.cursor-server/package.json` to fix `SyntaxError: Unexpected token 'export'` causes worse failures:
+
+- **Multiplex server** fails: `ReferenceError: exports is not defined in ES module scope` (it uses CommonJS)
+- **Code server** fails: `ERR_MODULE_NOT_FOUND: Cannot find package 'cookie'` (ESM resolution breaks bundled deps)
+
+If you added this workaround, remove it:
+
+```bash
+rm -f /home/coder/.cursor-server/package.json
+```
+
+Then try connecting again. If you still see the original `export` error, it may be a Cursor version bug — try updating Cursor IDE or report to [Cursor forum](https://forum.cursor.com).
 
 ## Verify from workspace
 
