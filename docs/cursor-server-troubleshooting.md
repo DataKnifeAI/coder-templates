@@ -72,6 +72,31 @@ rm -f /home/coder/.cursor-server/package.json
 
 Then try connecting again. If you still see the original `export` error, it may be a Cursor version bug — try updating Cursor IDE or report to [Cursor forum](https://forum.cursor.com).
 
+### 6. `SyntaxError: Unexpected token 'export'` (ES module conflict)
+
+**Debug findings** (via `coder ssh <workspace> -- <commands>`):
+
+| Without `package.json` | With `package.json` `"type":"module"` |
+|------------------------|----------------------------------------|
+| **Code server**: `SyntaxError: Unexpected token 'export'` — `server-main.js` uses ES module syntax but Node loads `.js` as CommonJS | **Multiplex server**: `ReferenceError: exports is not defined` — multiplex uses CommonJS |
+| | **Code server**: `ERR_MODULE_NOT_FOUND` for `cookie`, `node-fetch`, etc. — ESM bare imports fail |
+
+**Root cause:** Cursor Server ships a mixed codebase: `server-main.js` is ESM, multiplex server is CommonJS. No single `package.json` setting fixes both. Adding `type:module` in the `out/` directory only fixes the export error but triggers a cascade of missing-package errors.
+
+**Workarounds to try:**
+
+1. **Clean reinstall** — delete server and retry (may fetch a different build):
+   ```bash
+   rm -rf ~/.cursor-server
+   ```
+   Then connect again from Cursor.
+
+2. **Update Cursor IDE** — newer versions may fix the server build.
+
+3. **Use VS Code for Remote-SSH** — if you need remote access immediately, VS Code's server may work where Cursor's does not.
+
+4. **Report the issue** — [Cursor forum](https://forum.cursor.com) or [Cursor GitHub](https://github.com/getcursor/cursor/issues) with logs from `/tmp/cursor-remote-code.log.*` and `/tmp/cursor-remote-multiplex.log.*`.
+
 ## Verify from workspace
 
 SSH into the workspace and run:

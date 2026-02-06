@@ -107,9 +107,14 @@ resource "coder_agent" "main" {
     if [ ! -f /home/coder/.local/bin/agent ]; then
       sudo -u coder bash -c 'curl -fsSL https://cursor.com/install | bash'
     fi
-    # Add ~/.local/bin to PATH for coder user
+    # Add ~/.local/bin to PATH for coder user (.bashrc + .profile for login shells e.g. Cursor terminal)
     CURSOR_PATH='export PATH="$HOME/.local/bin:$PATH"'
-    grep -qF '.local/bin' /home/coder/.bashrc 2>/dev/null || echo "$CURSOR_PATH" >> /home/coder/.bashrc
+    for f in /home/coder/.bashrc /home/coder/.profile; do
+      [ -f "$f" ] || touch "$f"
+      grep -qF '.local/bin' "$f" 2>/dev/null || echo "$CURSOR_PATH" >> "$f"
+    done
+    # Remove any leftover package.json from old workaround (breaks multiplex + code server)
+    rm -f /home/coder/.cursor-server/package.json
     # Agent ready for Cursor IDE and CLI
   EOT
 
