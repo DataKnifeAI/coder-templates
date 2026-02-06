@@ -97,6 +97,12 @@ resource "coder_agent" "main" {
   }
   startup_script = <<-EOT
     set -e
+    # Node.js 20+ required for Cursor Server (Remote-SSH fallback when bundled node fails)
+    NODE_MAJOR=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1 || echo 0)
+    if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
+      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+      sudo apt-get install -y nodejs
+    fi
     # Install Cursor CLI (https://cursor.com/cli)
     if ! command -v agent >/dev/null 2>&1; then
       curl -fsSL https://cursor.com/install | bash

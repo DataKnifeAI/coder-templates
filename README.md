@@ -84,6 +84,7 @@ See [Coder's extending templates guide](https://coder.com/docs/admin/templates/e
 
 - **[Build Parameters](docs/build-parameters.md)** — Reference for template parameters (types, validation, mutability)
 - **[Wildcard Subdomain](docs/wildcard-subdomain.md)** — Why workspaces need it, how to check via CLI
+- **[Cursor Server Troubleshooting](docs/cursor-server-troubleshooting.md)** — Fix "Code server did not start successfully"
 
 ## CI/CD
 
