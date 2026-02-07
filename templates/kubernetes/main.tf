@@ -212,7 +212,8 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
   }
   wait_until_bound = false
   spec {
-    access_modes = ["ReadWriteOnce"]
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "truenas-csi-nfs"
     resources {
       requests = {
         storage = "${data.coder_parameter.home_disk_size.value}Gi"
