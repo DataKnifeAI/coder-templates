@@ -278,9 +278,10 @@ resource "kubernetes_deployment_v1" "main" {
         }
       }
       spec {
+        # No fs_group: kubelet would chown the volume, which breaks NFS. Ensure the
+        # NFS export (or PV) is owned by UID 1000 to match run_as_user.
         security_context {
           run_as_user     = 1000
-          fs_group        = 1000
           run_as_non_root = true
         }
 
