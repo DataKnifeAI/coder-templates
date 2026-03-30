@@ -9,7 +9,7 @@ tags: [kubernetes, container, archlinux, cursor]
 
 # Remote Development on Kubernetes (Arch Linux)
 
-Same layout as **dkai-dev** (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `dpkg`, `nodejs`, `github-cli` (`gh`), `glab`), plus Cursor’s **`cursor-sandbox-apparmor`** `.deb` for the Agent terminal sandbox.
+Same layout as **dkai-dev** (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `binutils` for `ar`, `zstd`, `nodejs`, `github-cli` (`gh`), `glab`). Cursor’s **`cursor-sandbox-apparmor`** `.deb` is unpacked with `ar` + `zstd` (not `dpkg`, which mishandles this package on Arch), then **`apparmor_parser -r`** is run so the profile loads even without systemd’s `apparmor.service` (the `.deb` postinst normally skips that in containers).
 
 The Cursor module opens **`/home/coder/git`** (i.e. `~/git` for the `coder` user). That directory is created at startup if missing.
 
@@ -33,6 +33,6 @@ Tools outside `/home/coder` are reset on rebuild unless baked into a custom imag
 
 ## Cursor Agent terminal sandbox / AppArmor
 
-The startup script installs **`apparmor`**, **`dpkg`** (to install the official Debian package on Arch), and Cursor’s **`cursor-sandbox-apparmor`** package from [Cursor’s docs](https://cursor.com/docs/agent/terminal) (same `.deb` as Debian/Ubuntu). That supplies the AppArmor profile needed for the Agent terminal sandbox on kernel 6.2+ when plain `apparmor` is not enough.
+The script installs [Cursor’s `cursor-sandbox-apparmor` `.deb`](https://cursor.com/docs/agent/terminal) by extracting `data.tar.zst` to `/etc` (profile `cursor-sandbox-remote`, sysctl snippet for user namespaces), then runs **`apparmor_parser -r`** and **`sysctl -p`** when those paths exist. That matches what the Debian `postinst` would do only if **`systemctl is-active apparmor`**—which is usually false in containers—so Arch previously never loaded the profile.
 
-The **Kubernetes node** must still allow unprivileged user namespaces and AppArmor where your runtime applies them; container seccomp or missing `apparmor_parser` on the host can still block the sandbox. If problems remain, use Cursor’s sandbox settings or your cluster’s security profile.
+The **node** must still enforce AppArmor and user namespaces as your CRI allows; some clusters cannot apply new sysctl or profiles inside pods.

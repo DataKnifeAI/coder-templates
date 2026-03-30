@@ -100,7 +100,7 @@ resource "coder_agent" "main" {
     set -e
     # Official archlinux image has no non-root dev user; run pod as root (see deployment)
     # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
-    pacman -Sy --needed --noconfirm apparmor bash sudo curl dpkg git nodejs github-cli glab
+    pacman -Sy --needed --noconfirm apparmor bash binutils curl git nodejs github-cli glab sudo zstd
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -117,10 +117,22 @@ resource "coder_agent" "main" {
     mkdir -p /home/coder/git
     chown coder:coder /home/coder/git 2>/dev/null || true
     # nodejs from Arch repos is 20+ (Cursor Server / Remote-SSH compatibility)
-    # Cursor Agent terminal sandbox (same .deb as Ubuntu; install with dpkg) — cursor.com/docs/agent/terminal
-    if ! dpkg -l cursor-sandbox-apparmor 2>/dev/null | grep -q '^ii'; then
-      curl -fsSL https://downloads.cursor.com/lab/enterprise/cursor-sandbox-apparmor_0.6.0_all.deb -o /tmp/cursor-sandbox-apparmor.deb
-      dpkg -i /tmp/cursor-sandbox-apparmor.deb || echo 'warning: cursor-sandbox-apparmor install failed (Agent terminal sandbox may not work)' >&2
+    # Cursor Agent terminal sandbox — cursor.com/docs/agent/terminal
+    # The .deb postinst only loads AppArmor if systemd apparmor.service is active; containers usually
+    # have neither, and dpkg on Arch mishandles zst data tarballs. Extract with ar+zstd and always parse.
+    CURSOR_SANDBOX_DEB=/tmp/cursor-sandbox-apparmor.deb
+    CURSOR_SANDBOX_PROFILE=/etc/apparmor.d/cursor-sandbox-remote
+    if [ ! -f "$CURSOR_SANDBOX_PROFILE" ]; then
+      curl -fsSL https://downloads.cursor.com/lab/enterprise/cursor-sandbox-apparmor_0.6.0_all.deb -o "$CURSOR_SANDBOX_DEB"
+      mkdir -p /tmp/cursor-sandbox-apparmor-extract
+      ( cd /tmp/cursor-sandbox-apparmor-extract && ar x "$CURSOR_SANDBOX_DEB" data.tar.zst && zstd -dc data.tar.zst | tar -x -C / )
+      rm -rf /tmp/cursor-sandbox-apparmor-extract
+    fi
+    if [ -f "$CURSOR_SANDBOX_PROFILE" ] && command -v apparmor_parser >/dev/null 2>&1; then
+      apparmor_parser -r "$CURSOR_SANDBOX_PROFILE" 2>/dev/null || true
+    fi
+    if [ -f /etc/sysctl.d/50-cursor-remote-userns.conf ]; then
+      sysctl -p /etc/sysctl.d/50-cursor-remote-userns.conf 2>/dev/null || true
     fi
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then

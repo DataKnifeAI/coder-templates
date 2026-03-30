@@ -119,10 +119,17 @@ resource "coder_agent" "main" {
       curl -fsSL "https://raw.githubusercontent.com/upciti/wakemeops/main/assets/install_repository" | sudo bash
       sudo apt-get install -y glab
     fi
-    # Cursor Agent terminal sandbox (AppArmor profile) — remote/CLI; see cursor.com/docs/agent/terminal
+    # Cursor Agent terminal sandbox — cursor.com/docs/agent/terminal
+    # postinst only runs apparmor_parser if systemd apparmor.service is active; force-load in containers.
     if ! dpkg -l cursor-sandbox-apparmor 2>/dev/null | grep -q '^ii'; then
       curl -fsSL https://downloads.cursor.com/lab/enterprise/cursor-sandbox-apparmor_0.6.0_all.deb -o /tmp/cursor-sandbox-apparmor.deb
       sudo apt-get install -y apparmor /tmp/cursor-sandbox-apparmor.deb || echo 'warning: cursor-sandbox-apparmor install failed (Agent terminal sandbox may not work)' >&2
+    fi
+    if [ -f /etc/apparmor.d/cursor-sandbox-remote ] && command -v apparmor_parser >/dev/null 2>&1; then
+      sudo apparmor_parser -r /etc/apparmor.d/cursor-sandbox-remote 2>/dev/null || true
+    fi
+    if [ -f /etc/sysctl.d/50-cursor-remote-userns.conf ]; then
+      sudo sysctl -p /etc/sysctl.d/50-cursor-remote-userns.conf 2>/dev/null || true
     fi
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then
