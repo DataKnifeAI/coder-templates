@@ -9,7 +9,7 @@ tags: [kubernetes, container, archlinux, cursor]
 
 # Remote Development on Kubernetes (Arch Linux)
 
-Same layout as **dkai-dev** (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `nodejs`, `github-cli` (`gh`), `glab`).
+Same layout as **dkai-dev** (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `dpkg`, `nodejs`, `github-cli` (`gh`), `glab`), plus Cursor’s **`cursor-sandbox-apparmor`** `.deb` for the Agent terminal sandbox.
 
 The Cursor module opens **`/home/coder/git`** (i.e. `~/git` for the `coder` user). That directory is created at startup if missing.
 
@@ -31,6 +31,8 @@ First start may take longer while packages sync and install.
 
 Tools outside `/home/coder` are reset on rebuild unless baked into a custom image.
 
-## Cursor sandbox / AppArmor
+## Cursor Agent terminal sandbox / AppArmor
 
-The template installs the **`apparmor`** package so the CLI matches Cursor’s guidance for distributions that gate user namespaces. In Kubernetes, the **node** must still allow unprivileged user namespaces if your kernel enforces restrictions; profile loading may also depend on the host. If sandbox errors persist, use Cursor settings to adjust sandboxing or consult your cluster’s security profile (seccomp, AppArmor on the node, etc.).
+The startup script installs **`apparmor`**, **`dpkg`** (to install the official Debian package on Arch), and Cursor’s **`cursor-sandbox-apparmor`** package from [Cursor’s docs](https://cursor.com/docs/agent/terminal) (same `.deb` as Debian/Ubuntu). That supplies the AppArmor profile needed for the Agent terminal sandbox on kernel 6.2+ when plain `apparmor` is not enough.
+
+The **Kubernetes node** must still allow unprivileged user namespaces and AppArmor where your runtime applies them; container seccomp or missing `apparmor_parser` on the host can still block the sandbox. If problems remain, use Cursor’s sandbox settings or your cluster’s security profile.

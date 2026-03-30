@@ -100,7 +100,7 @@ resource "coder_agent" "main" {
     set -e
     # Official archlinux image has no non-root dev user; run pod as root (see deployment)
     # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
-    pacman -Sy --needed --noconfirm apparmor bash sudo curl git nodejs github-cli glab
+    pacman -Sy --needed --noconfirm apparmor bash sudo curl dpkg git nodejs github-cli glab
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -117,6 +117,11 @@ resource "coder_agent" "main" {
     mkdir -p /home/coder/git
     chown coder:coder /home/coder/git 2>/dev/null || true
     # nodejs from Arch repos is 20+ (Cursor Server / Remote-SSH compatibility)
+    # Cursor Agent terminal sandbox (same .deb as Ubuntu; install with dpkg) — cursor.com/docs/agent/terminal
+    if ! dpkg -l cursor-sandbox-apparmor 2>/dev/null | grep -q '^ii'; then
+      curl -fsSL https://downloads.cursor.com/lab/enterprise/cursor-sandbox-apparmor_0.6.0_all.deb -o /tmp/cursor-sandbox-apparmor.deb
+      dpkg -i /tmp/cursor-sandbox-apparmor.deb || echo 'warning: cursor-sandbox-apparmor install failed (Agent terminal sandbox may not work)' >&2
+    fi
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then
       curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
