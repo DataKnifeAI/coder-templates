@@ -100,7 +100,7 @@ resource "coder_agent" "main" {
     set -e
     # Official archlinux image has no non-root dev user; run pod as root (see deployment)
     # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
-    pacman -Sy --needed --noconfirm bash sudo curl git nodejs github-cli glab
+    pacman -Sy --needed --noconfirm apparmor bash sudo curl git nodejs github-cli glab
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -113,6 +113,9 @@ resource "coder_agent" "main" {
     chmod 440 /etc/sudoers.d/coder
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
+    # Default workspace for Cursor module (folder = /home/coder/git); ensure it exists on fresh PVC.
+    mkdir -p /home/coder/git
+    chown coder:coder /home/coder/git 2>/dev/null || true
     # nodejs from Arch repos is 20+ (Cursor Server / Remote-SSH compatibility)
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then
@@ -192,6 +195,7 @@ resource "coder_agent" "main" {
 
 # Cursor IDE - one-click button to launch Cursor Desktop
 # https://registry.coder.com/modules/coder/cursor
+# folder: default repo path (startup_script mkdir -p /home/coder/git)
 module "cursor" {
   count    = data.coder_workspace.me.start_count
   source   = "registry.coder.com/coder/cursor/coder"

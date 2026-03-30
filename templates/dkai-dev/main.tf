@@ -114,9 +114,10 @@ resource "coder_agent" "main" {
       sudo apt-get update
       sudo apt-get install -y gh
     fi
-    # GitLab CLI (https://gitlab.com/gitlab-org/cli)
+    # GitLab CLI (WakeMeOps apt; see GitLab docs installation_options.md — GitHub install.sh is 404)
     if ! command -v glab >/dev/null 2>&1; then
-      curl -s "https://raw.githubusercontent.com/gitlab-org/cli/main/scripts/install.sh" | sudo sh
+      curl -fsSL "https://raw.githubusercontent.com/upciti/wakemeops/main/assets/install_repository" | sudo bash
+      sudo apt-get install -y glab
     fi
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then

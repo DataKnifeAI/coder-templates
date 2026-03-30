@@ -9,7 +9,9 @@ tags: [kubernetes, container, archlinux, cursor]
 
 # Remote Development on Kubernetes (Arch Linux)
 
-Same layout as **dkai-dev** (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`nodejs`, `github-cli` (`gh`), `glab`).
+Same layout as **dkai-dev** (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `nodejs`, `github-cli` (`gh`), `glab`).
+
+The Cursor module opens **`/home/coder/git`** (i.e. `~/git` for the `coder` user). That directory is created at startup if missing.
 
 ## Container user
 
@@ -28,3 +30,7 @@ First start may take longer while packages sync and install.
 - PVC (persistent data under `/home/coder`)
 
 Tools outside `/home/coder` are reset on rebuild unless baked into a custom image.
+
+## Cursor sandbox / AppArmor
+
+The template installs the **`apparmor`** package so the CLI matches Cursor’s guidance for distributions that gate user namespaces. In Kubernetes, the **node** must still allow unprivileged user namespaces if your kernel enforces restrictions; profile loading may also depend on the host. If sandbox errors persist, use Cursor settings to adjust sandboxing or consult your cluster’s security profile (seccomp, AppArmor on the node, etc.).
