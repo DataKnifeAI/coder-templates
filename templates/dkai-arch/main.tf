@@ -102,11 +102,17 @@ resource "coder_agent" "main" {
     # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
     pacman -Sy --needed --noconfirm bash sudo curl git nodejs github-cli glab
     if ! id -u coder >/dev/null 2>&1; then
-      useradd -m -u 1000 -s /bin/bash coder
+      # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
+      if [ -d /home/coder ]; then
+        useradd --no-create-home -u 1000 -d /home/coder -s /bin/bash coder
+      else
+        useradd -m -u 1000 -s /bin/bash coder
+      fi
     fi
     echo 'coder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/coder
     chmod 440 /etc/sudoers.d/coder
-    chown -R coder:coder /home/coder
+    # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
+    chown -R coder:coder /home/coder 2>/dev/null || true
     # nodejs from Arch repos is 20+ (Cursor Server / Remote-SSH compatibility)
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then
@@ -282,7 +288,7 @@ resource "kubernetes_deployment_v1" "main" {
       }
       spec {
         # archlinux image has no UID-1000 workspace user; pod runs as root for pacman bootstrap.
-        # NFS home volume should still be owned by UID/GID 1000 (chown in startup_script).
+        # NFS home volume: prefer UID/GID 1000 on the share; startup_script chowns when permitted.
         security_context {
           run_as_user     = 0
           run_as_non_root = false
