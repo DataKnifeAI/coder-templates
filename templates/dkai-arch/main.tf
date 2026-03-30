@@ -133,7 +133,26 @@ resource "coder_agent" "main" {
     done
     # Remove any leftover package.json from old workaround (breaks multiplex + code server)
     rm -f /home/coder/.cursor-server/package.json
-    # Agent ready for Cursor IDE and CLI
+    echo ''
+    echo '=== Startup summary ==='
+    echo ''
+    echo 'git'
+    git --version 2>/dev/null || echo '  (not found)'
+    echo ''
+    echo 'Node.js'
+    node -v 2>/dev/null || echo '  (not found)'
+    echo ''
+    echo 'CLI tools'
+    if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo '  gh: not found'; fi
+    if command -v glab >/dev/null 2>&1; then glab version 2>/dev/null | head -n1; else echo '  glab: not found'; fi
+    if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo '  coder: not found'; fi
+    if [ -x /home/coder/.local/bin/agent ]; then
+      echo -n '  cursor (agent): '
+      /home/coder/.local/bin/agent --version 2>/dev/null || echo '(no version string)'
+    else
+      echo '  cursor (agent): not installed'
+    fi
+    echo ''
   EOT
 
   # The following metadata blocks are optional. They are used to display
