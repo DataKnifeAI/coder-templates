@@ -1,7 +1,7 @@
 ---
 display_name: Kubernetes (Arch, Cursor)
 description: Kubernetes workspace on Arch Linux with Cursor IDE & CLI
-icon: ../../../site/static/icon/k8s.png
+icon: /icon/k8s.png
 maintainer_github: coder
 verified: false
 tags: [kubernetes, container, archlinux, cursor]
