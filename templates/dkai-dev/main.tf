@@ -160,6 +160,11 @@ resource "coder_agent" "main" {
       echo '  cursor (agent): not installed'
     fi
     echo ''
+    echo '=== CLI login (run in a terminal as the workspace user) ==='
+    echo '  GitHub:  gh auth login'
+    echo '  GitLab:  glab auth login'
+    echo '  Coder:   this workspace is already linked; for CLI outside Coder use: coder login <your-coder-url>'
+    echo ''
   EOT
 
   # The following metadata blocks are optional. They are used to display
