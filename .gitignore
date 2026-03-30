@@ -6,6 +6,8 @@
 *.tfstate.*
 *.tfvars
 !*.tfvars.example
+# Coder CLI loads these on templates push; keep in repo for non-interactive CI
+!templates/**/terraform.tfvars
 .terraform.lock.hcl
 crash.log
 override.tf
