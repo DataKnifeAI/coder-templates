@@ -97,28 +97,19 @@ resource "coder_agent" "main" {
   }
   startup_script = <<-EOT
     set -e
-    # Node.js 20+ required for Cursor Server (Remote-SSH fallback when bundled node fails)
-    NODE_MAJOR=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1 || echo 0)
-    if [ -z "$NODE_MAJOR" ] || [ "$NODE_MAJOR" -lt 20 ] 2>/dev/null; then
-      curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-      sudo apt-get install -y nodejs
+    # Official archlinux image has no non-root dev user; run pod as root (see deployment)
+    # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
+    pacman -Sy --needed --noconfirm bash sudo curl git nodejs github-cli glab
+    if ! id -u coder >/dev/null 2>&1; then
+      useradd -m -u 1000 -s /bin/bash coder
     fi
-    # GitHub CLI (https://cli.github.com)
-    if ! command -v gh >/dev/null 2>&1; then
-      sudo mkdir -p -m 755 /etc/apt/keyrings
-      curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo tee /etc/apt/keyrings/githubcli-archive-keyring.gpg > /dev/null
-      sudo chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg
-      echo "deb [arch=$$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null
-      sudo apt-get update
-      sudo apt-get install -y gh
-    fi
-    # GitLab CLI (https://gitlab.com/gitlab-org/cli)
-    if ! command -v glab >/dev/null 2>&1; then
-      curl -s "https://raw.githubusercontent.com/gitlab-org/cli/main/scripts/install.sh" | sudo sh
-    fi
+    echo 'coder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/coder
+    chmod 440 /etc/sudoers.d/coder
+    chown -R coder:coder /home/coder
+    # nodejs from Arch repos is 20+ (Cursor Server / Remote-SSH compatibility)
     # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then
-      curl -fsSL https://coder.dataknife.net/install.sh | sudo sh -s --
+      curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     fi
     # Install Cursor CLI (https://cursor.com/cli) as coder user
     if [ ! -f /home/coder/.local/bin/agent ]; then
@@ -289,20 +280,20 @@ resource "kubernetes_deployment_v1" "main" {
         }
       }
       spec {
-        # No fs_group: kubelet would chown the volume, which breaks NFS. Ensure the
-        # NFS export (or PV) is owned by UID 1000 to match run_as_user.
+        # archlinux image has no UID-1000 workspace user; pod runs as root for pacman bootstrap.
+        # NFS home volume should still be owned by UID/GID 1000 (chown in startup_script).
         security_context {
-          run_as_user     = 1000
-          run_as_non_root = true
+          run_as_user     = 0
+          run_as_non_root = false
         }
 
         container {
           name              = "dev"
-          image             = "codercom/enterprise-base:ubuntu"
+          image             = "docker.io/archlinux:latest"
           image_pull_policy = "Always"
           command           = ["sh", "-c", coder_agent.main.init_script]
           security_context {
-            run_as_user = "1000"
+            run_as_user = "0"
           }
           env {
             name  = "CODER_AGENT_TOKEN"

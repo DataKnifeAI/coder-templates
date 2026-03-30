@@ -4,7 +4,7 @@
 
 .NOTPARALLEL:
 
-TEMPLATES := kubernetes dkai-dev
+TEMPLATES := kubernetes dkai-dev dkai-arch
 TERRAFORM := terraform
 
 # V=1 enables verbose/debug output

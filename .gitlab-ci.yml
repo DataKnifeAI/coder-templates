@@ -36,6 +36,11 @@ test:dkai-dev:
   variables:
     TEMPLATE_NAME: dkai-dev
 
+test:dkai-arch:
+  <<: *test_template
+  variables:
+    TEMPLATE_NAME: dkai-arch
+
 push-to-coder:
   stage: deploy
   tags:
@@ -44,13 +49,14 @@ push-to-coder:
   needs:
     - test:kubernetes
     - test:dkai-dev
+    - test:dkai-arch
   before_script:
     - apt-get update && apt-get install -y curl ca-certificates
     - curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     - coder version
   script:
     - |
-      for template in kubernetes dkai-dev; do
+      for template in kubernetes dkai-dev dkai-arch; do
         if [ -d "templates/$template" ]; then
           echo "Pushing template: $template"
           coder templates push "$template" --directory "templates/$template" --activate=false -y

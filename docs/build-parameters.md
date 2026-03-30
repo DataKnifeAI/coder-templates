@@ -23,4 +23,5 @@ Topics covered include:
 | Template   | Parameters                                                                 |
 |-----------|----------------------------------------------------------------------------|
 | dkai-dev  | CPU (2/4 cores), Memory (4/8 GB), Home disk size (50–100 GB, monotonic ↑). Cursor IDE only (no subdomain). |
+| dkai-arch | Same parameters as dkai-dev. Arch Linux base image; Cursor IDE only (no subdomain). |
 | kubernetes| See [templates/kubernetes/README.md](../templates/kubernetes/README.md)   |
