@@ -100,6 +100,18 @@ resource "coder_agent" "main" {
     set -e
     # Official archlinux image has no non-root dev user; run pod as root (see deployment)
     # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
+    # Mask perl's detect-old-perl-modules hook (triggerless override; see Arch wiki Pacman#Hooks).
+    # In some K8s environments its post-transaction step can fail with:
+    #   sudo: unable to execute /usr/bin/bash: Permission denied
+    # That hook only prints vendor/site perl path warnings; skipping is safe for this workspace.
+    mkdir -p /etc/pacman.d/hooks
+    printf '%s\n' \
+      '# Managed by Coder template: suppress perl path warnings in container/K8s.' \
+      '[Action]' \
+      'Description = Skip old perl modules check (masked)' \
+      'When = PostTransaction' \
+      'Exec = /usr/bin/true' \
+      >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm apparmor bash binutils curl git nodejs github-cli glab sudo zstd
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
