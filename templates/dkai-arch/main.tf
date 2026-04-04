@@ -101,9 +101,11 @@ resource "coder_agent" "main" {
     # Official archlinux image has no non-root dev user; run pod as root (see deployment)
     # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
     # Mask perl's detect-old-perl-modules hook (triggerless override; see Arch wiki Pacman#Hooks).
-    # In some K8s environments its post-transaction step can fail with:
+    # Split pacman into two transactions: install everything except sudo, then sudo alone. In some
+    # Kubernetes/AppArmor setups a single large transaction that installs sudo triggered spurious
     #   sudo: unable to execute /usr/bin/bash: Permission denied
-    # That hook only prints vendor/site perl path warnings; skipping is safe for this workspace.
+    # after the last post-transaction hook; isolating sudo avoids that. --disable-sandbox relaxes
+    # pacman's download sandbox where landlock/seccomp is constrained.
     mkdir -p /etc/pacman.d/hooks
     printf '%s\n' \
       '# Managed by Coder template: suppress perl path warnings in container/K8s.' \
@@ -112,7 +114,9 @@ resource "coder_agent" "main" {
       'When = PostTransaction' \
       'Exec = /usr/bin/true' \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
-    pacman -Sy --needed --noconfirm apparmor bash binutils curl git nodejs github-cli glab sudo zstd
+    pacman -Sy --needed --noconfirm --disable-sandbox \
+      apparmor bash binutils curl git nodejs github-cli glab zstd
+    pacman -S --needed --noconfirm --disable-sandbox sudo
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -150,9 +154,9 @@ resource "coder_agent" "main" {
     if ! command -v coder >/dev/null 2>&1; then
       curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     fi
-    # Install Cursor CLI (https://cursor.com/cli) as coder user
+    # Install Cursor CLI (https://cursor.com/cli) as coder user (runuser: util-linux, no sudo binary)
     if [ ! -f /home/coder/.local/bin/agent ]; then
-      sudo -u coder bash -c 'curl -fsSL https://cursor.com/install | bash'
+      runuser -u coder -- bash -c 'curl -fsSL https://cursor.com/install | bash'
     fi
     # Add ~/.local/bin to PATH for coder user (.bashrc + .profile for login shells e.g. Cursor terminal)
     CURSOR_PATH='export PATH="$HOME/.local/bin:$PATH"'
