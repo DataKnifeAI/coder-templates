@@ -99,7 +99,7 @@ resource "coder_agent" "main" {
   startup_script = <<-EOT
     set -e
     # Pod runs as root (see deployment); pacman installs tools, then UID 1000 under /home/coder.
-    # Mask detect-old-perl-modules: that hook can invoke sudo on some K8s nodes (bash permission denied).
+    # Mask detect-old-perl-modules: that hook can invoke sudo on some K8s nodes; bash permission denied.
     mkdir -p /etc/pacman.d/hooks
     printf "%s\n" \
       "[Action]" \
@@ -110,16 +110,19 @@ resource "coder_agent" "main" {
     pacman -Sy --needed --noconfirm --disable-sandbox \
       apparmor bash binutils curl git nodejs zstd
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
-    # Trim GitHub release tag with sed (avoid bash prefix-strip; Terraform treats dollar-brace as template syntax in this block).
-    # curl -w must not use apostrophe quoting: Coder wraps chunks in bash -c with single-quoted script; inner apostrophes break before $( ).
+    # Trim GitHub release tag with sed; avoid bash prefix-strip here; Terraform treats dollar-brace as template syntax in this block.
+    # Avoid apostrophe in curl -w; avoid command-substitution open-paren on one line if the agent strips dollar signs.
     CFMT=%%{url_effective}
-    GH_URL=$$(curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w "$$CFMT" https://github.com/cli/cli/releases/latest 2>/dev/null) || true
-    GH_TAG=$$(basename "$$GH_URL" 2>/dev/null || true)
-    GH_VERSION=$$(T="$$GH_TAG" python3 -c "import os; print(os.environ.get(\"T\",\"\").removeprefix(\"v\"))" 2>/dev/null) || true
+    curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w "$$CFMT" https://github.com/cli/cli/releases/latest 2>/dev/null > /tmp/dkai-gh-url || true
+    read -r GH_URL < /tmp/dkai-gh-url || true
+    GH_TAG=$${GH_URL##*/}
+    T="$$GH_TAG" python3 -c "import os; print(os.environ.get(\"T\",\"\").removeprefix(\"v\"))" 2>/dev/null > /tmp/dkai-gh-ver || true
+    read -r GH_VERSION < /tmp/dkai-gh-ver || true
     [ -n "$$GH_VERSION" ] || GH_VERSION=2.89.0
     GH_CUR=
     if command -v gh >/dev/null 2>&1; then
-      GH_CUR=$$(gh version 2>/dev/null | head -n1 | sed -E "s/^gh version ([0-9.]+).*/\\1/")
+      gh version 2>/dev/null | head -n1 | sed -E "s/^gh version ([0-9.]+).*/\\1/" > /tmp/dkai-gh-cur || true
+      read -r GH_CUR < /tmp/dkai-gh-cur || true
     fi
     if [ "$$GH_CUR" != "$$GH_VERSION" ]; then
       curl -fsSL "https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tgz
@@ -127,11 +130,14 @@ resource "coder_agent" "main" {
       install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
       rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
     fi
-    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin)[\"tag_name\"]; print(t.removeprefix(\"v\"))") || true
+    curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" -o /tmp/dkai-glab-json 2>/dev/null || true
+    python3 -c "import sys,json; t=json.load(sys.stdin)[\"tag_name\"]; print(t.removeprefix(\"v\"))" < /tmp/dkai-glab-json > /tmp/dkai-glab-ver 2>/dev/null || true
+    read -r GLAB_VERSION < /tmp/dkai-glab-ver || true
     [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
     GLAB_CUR=
     if command -v glab >/dev/null 2>&1; then
-      GLAB_CUR=$$(glab version 2>/dev/null | head -n1 | sed -E "s/.*([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/")
+      glab version 2>/dev/null | head -n1 | sed -E "s/.*([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/" > /tmp/dkai-glab-cur || true
+      read -r GLAB_CUR < /tmp/dkai-glab-cur || true
     fi
     if [ "$$GLAB_CUR" != "$$GLAB_VERSION" ]; then
       curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v$${GLAB_VERSION}/downloads/glab_$${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz
