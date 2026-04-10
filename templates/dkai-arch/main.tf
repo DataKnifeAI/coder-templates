@@ -98,25 +98,9 @@ resource "coder_agent" "main" {
   }
   startup_script = <<-EOT
     set -e
-    # Official archlinux image has no non-root dev user; run pod as root (see deployment)
-    # so we can use pacman, then install/operate as UID 1000 under /home/coder (NFS-friendly).
-    # Mask perl's detect-old-perl-modules hook (triggerless override; see Arch wiki Pacman#Hooks).
-    # Split pacman into two transactions: install everything except sudo, then sudo alone. In some
-    # Kubernetes/AppArmor setups a single large transaction that installs sudo triggered spurious
-    #   sudo: unable to execute /usr/bin/bash: Permission denied
-    # after the last post-transaction hook; isolating sudo avoids that. --disable-sandbox relaxes
-    # pacman's download sandbox where landlock/seccomp is constrained.
-    mkdir -p /etc/pacman.d/hooks
-    printf '%s\n' \
-      '# Managed by Coder template: suppress perl path warnings in container/K8s.' \
-      '[Action]' \
-      'Description = Skip old perl modules check (masked)' \
-      'When = PostTransaction' \
-      'Exec = /usr/bin/true' \
-      >/etc/pacman.d/hooks/detect-old-perl-modules.hook
+    # Pod runs as root (see deployment); pacman installs tools, then we use UID 1000 under /home/coder.
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git nodejs github-cli glab zstd
-    pacman -S --needed --noconfirm --disable-sandbox sudo
+      apparmor bash binutils curl git nodejs github-cli glab sudo zstd
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -132,10 +116,7 @@ resource "coder_agent" "main" {
     # Default workspace for Cursor module (folder = /home/coder/git); ensure it exists on fresh PVC.
     mkdir -p /home/coder/git
     chown coder:coder /home/coder/git 2>/dev/null || true
-    # nodejs from Arch repos is 20+ (Cursor Server / Remote-SSH compatibility)
-    # Cursor Agent terminal sandbox — cursor.com/docs/agent/terminal
-    # The .deb postinst only loads AppArmor if systemd apparmor.service is active; containers usually
-    # have neither, and dpkg on Arch mishandles zst data tarballs. Extract with ar+zstd and always parse.
+    # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
     CURSOR_SANDBOX_DEB=/tmp/cursor-sandbox-apparmor.deb
     CURSOR_SANDBOX_PROFILE=/etc/apparmor.d/cursor-sandbox-remote
     if [ ! -f "$CURSOR_SANDBOX_PROFILE" ]; then
@@ -150,13 +131,11 @@ resource "coder_agent" "main" {
     if [ -f /etc/sysctl.d/50-cursor-remote-userns.conf ]; then
       sysctl -p /etc/sysctl.d/50-cursor-remote-userns.conf 2>/dev/null || true
     fi
-    # Coder CLI (install script from this deployment)
     if ! command -v coder >/dev/null 2>&1; then
       curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     fi
-    # Install Cursor CLI (https://cursor.com/cli) as coder user (runuser: util-linux, no sudo binary)
     if [ ! -f /home/coder/.local/bin/agent ]; then
-      runuser -u coder -- bash -c 'curl -fsSL https://cursor.com/install | bash'
+      sudo -u coder -- bash -c 'curl -fsSL https://cursor.com/install | bash'
     fi
     # Add ~/.local/bin to PATH for coder user (.bashrc + .profile for login shells e.g. Cursor terminal)
     CURSOR_PATH='export PATH="$HOME/.local/bin:$PATH"'
@@ -164,7 +143,6 @@ resource "coder_agent" "main" {
       [ -f "$f" ] || touch "$f"
       grep -qF '.local/bin' "$f" 2>/dev/null || echo "$CURSOR_PATH" >> "$f"
     done
-    # Remove any leftover package.json from old workaround (breaks multiplex + code server)
     rm -f /home/coder/.cursor-server/package.json
     echo ''
     echo '=== Startup summary ==='
