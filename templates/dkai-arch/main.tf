@@ -98,7 +98,7 @@ resource "coder_agent" "main" {
   }
   startup_script = <<-EOT
     set -e
-    # Installs tools via pacman where permitted; ensures coder user and /home/coder layout.
+    # Pod runs as root (see deployment); pacman installs tools, then UID 1000 under /home/coder.
     # Mask detect-old-perl-modules: that hook can invoke sudo on some K8s nodes; bash permission denied.
     mkdir -p /etc/pacman.d/hooks
     printf "%s\n" \
@@ -378,10 +378,11 @@ resource "kubernetes_deployment_v1" "main" {
         }
       }
       spec {
-        # Run agent and shells as UID 1000 (coder home). No fs_group: kubelet chown breaks NFS — export/PV should be UID 1000.
+        # archlinux image has no UID-1000 workspace user; pod runs as root for pacman bootstrap.
+        # NFS home volume: prefer UID/GID 1000 on the share; startup_script chowns when permitted.
         security_context {
-          run_as_user     = 1000
-          run_as_non_root = true
+          run_as_user     = 0
+          run_as_non_root = false
         }
 
         container {
@@ -390,19 +391,11 @@ resource "kubernetes_deployment_v1" "main" {
           image_pull_policy = "Always"
           command           = ["sh", "-c", coder_agent.main.init_script]
           security_context {
-            run_as_user = "1000"
+            run_as_user = "0"
           }
           env {
             name  = "CODER_AGENT_TOKEN"
             value = coder_agent.main.token
-          }
-          env {
-            name  = "HOME"
-            value = "/home/coder"
-          }
-          env {
-            name  = "USER"
-            value = "coder"
           }
           resources {
             requests = {
