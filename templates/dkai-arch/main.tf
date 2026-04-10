@@ -101,19 +101,21 @@ resource "coder_agent" "main" {
     # Pod runs as root (see deployment); pacman installs tools, then UID 1000 under /home/coder.
     # Mask detect-old-perl-modules: that hook can invoke sudo on some K8s nodes (bash permission denied).
     mkdir -p /etc/pacman.d/hooks
-    printf '%s\n' \
-      '[Action]' \
-      'Description = Skip old perl modules check (Coder/K8s)' \
-      'When = PostTransaction' \
-      'Exec = /usr/bin/true' \
+    printf "%s\n" \
+      "[Action]" \
+      "Description = Skip old perl modules check (Coder/K8s)" \
+      "When = PostTransaction" \
+      "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
       apparmor bash binutils curl git nodejs zstd
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
     # Trim GitHub release tag with sed (avoid bash prefix-strip; Terraform treats dollar-brace as template syntax in this block).
-    GH_URL=$$(curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w '%%{url_effective}' https://github.com/cli/cli/releases/latest 2>/dev/null) || true
+    # curl -w must not use apostrophe quoting: Coder wraps chunks in bash -c with single-quoted script; inner apostrophes break before $( ).
+    CFMT=%%{url_effective}
+    GH_URL=$$(curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w "$$CFMT" https://github.com/cli/cli/releases/latest 2>/dev/null) || true
     GH_TAG=$$(basename "$$GH_URL" 2>/dev/null || true)
-    GH_VERSION=$$(T="$$GH_TAG" python3 -c "import os; print(os.environ.get('T','').removeprefix('v'))" 2>/dev/null) || true
+    GH_VERSION=$$(T="$$GH_TAG" python3 -c "import os; print(os.environ.get(\"T\",\"\").removeprefix(\"v\"))" 2>/dev/null) || true
     [ -n "$$GH_VERSION" ] || GH_VERSION=2.89.0
     GH_CUR=
     if command -v gh >/dev/null 2>&1; then
@@ -125,7 +127,7 @@ resource "coder_agent" "main" {
       install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
       rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
     fi
-    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin)['tag_name']; print(t.removeprefix('v'))") || true
+    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin)[\"tag_name\"]; print(t.removeprefix(\"v\"))") || true
     [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
     GLAB_CUR=
     if command -v glab >/dev/null 2>&1; then
@@ -169,40 +171,39 @@ resource "coder_agent" "main" {
       curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     fi
     if [ ! -f /home/coder/.local/bin/agent ]; then
-      runuser -u coder -- bash -c 'curl -fsSL https://cursor.com/install | bash'
+      runuser -u coder -- bash -c "curl -fsSL https://cursor.com/install | bash"
     fi
     # Add ~/.local/bin to PATH for coder user (.bashrc + .profile for login shells e.g. Cursor terminal)
-    CURSOR_PATH='export PATH="$HOME/.local/bin:$PATH"'
     for f in /home/coder/.bashrc /home/coder/.profile; do
       [ -f "$f" ] || touch "$f"
-      grep -qF '.local/bin' "$f" 2>/dev/null || echo "$CURSOR_PATH" >> "$f"
+      grep -qF ".local/bin" "$f" 2>/dev/null || printf "%s\n" "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$f"
     done
     rm -f /home/coder/.cursor-server/package.json
-    echo ''
-    echo '=== Startup summary ==='
-    echo ''
-    echo 'git'
-    git --version 2>/dev/null || echo '  (not found)'
-    echo ''
-    echo 'Node.js'
-    node -v 2>/dev/null || echo '  (not found)'
-    echo ''
-    echo 'CLI tools'
-    if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo '  gh: not found'; fi
-    if command -v glab >/dev/null 2>&1; then glab version 2>/dev/null | head -n1; else echo '  glab: not found'; fi
-    if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo '  coder: not found'; fi
+    echo ""
+    echo "=== Startup summary ==="
+    echo ""
+    echo "git"
+    git --version 2>/dev/null || echo "  (not found)"
+    echo ""
+    echo "Node.js"
+    node -v 2>/dev/null || echo "  (not found)"
+    echo ""
+    echo "CLI tools"
+    if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo "  gh: not found"; fi
+    if command -v glab >/dev/null 2>&1; then glab version 2>/dev/null | head -n1; else echo "  glab: not found"; fi
+    if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo "  coder: not found"; fi
     if [ -x /home/coder/.local/bin/agent ]; then
-      echo -n '  cursor (agent): '
-      /home/coder/.local/bin/agent --version 2>/dev/null || echo '(no version string)'
+      echo -n "  cursor (agent): "
+      /home/coder/.local/bin/agent --version 2>/dev/null || echo "(no version string)"
     else
-      echo '  cursor (agent): not installed'
+      echo "  cursor (agent): not installed"
     fi
-    echo ''
-    echo '=== CLI login (run in a terminal as the workspace user) ==='
-    echo '  GitHub:  gh auth login'
-    echo '  GitLab:  glab auth login'
-    echo '  Coder:   this workspace is already linked; for CLI outside Coder use: coder login <your-coder-url>'
-    echo ''
+    echo ""
+    echo "=== CLI login (run in a terminal as the workspace user) ==="
+    echo "  GitHub:  gh auth login"
+    echo "  GitLab:  glab auth login"
+    echo "  Coder:   this workspace is already linked; for CLI outside Coder use: coder login <your-coder-url>"
+    echo ""
   EOT
 
   # The following metadata blocks are optional. They are used to display
