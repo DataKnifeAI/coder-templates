@@ -236,7 +236,7 @@ resource "coder_agent" "main" {
 module "cursor" {
   count    = data.coder_workspace.me.start_count
   source   = "registry.coder.com/coder/cursor/coder"
-  version  = "1.4.0"
+  version  = "1.4.1"
   agent_id = coder_agent.main.id
   folder   = "/home/coder/git"
 }

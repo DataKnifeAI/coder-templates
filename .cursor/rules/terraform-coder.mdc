@@ -26,7 +26,7 @@ alwaysApply: false
 
 ## Registry Modules
 
-- **Cursor IDE**: `registry.coder.com/coder/cursor/coder` (version 1.4.0)
+- **Cursor IDE**: `registry.coder.com/coder/cursor/coder` (version 1.4.1)
 - **Cursor CLI**: `registry.coder.com/coder-labs/cursor-cli/coder` (version 0.3.0)
 - Browse more at [Coder Registry](https://registry.coder.com)
 
