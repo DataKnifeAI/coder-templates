@@ -99,11 +99,8 @@ resource "coder_agent" "main" {
   startup_script = <<-EOT
     set -e
     # Pod runs as root (see deployment); pacman installs tools, then UID 1000 under /home/coder.
-    #
-    # Kubernetes + some Arch post-transaction hooks (ConditionNeedsUpdate, detect-old-perl-modules)
-    # invoke sudo; installing sudo via a normal transaction can yield:
-    #   sudo: unable to execute /usr/bin/bash: Permission denied
-    # So: mask the perl hook, satisfy sudo deps with --assume-installed, then install sudo without hooks.
+    # gh/glab depend on sudo; we do not install sudo. Satisfy deps with --assume-installed and mask
+    # detect-old-perl-modules (post-transaction hooks otherwise invoke sudo on some K8s nodes).
     mkdir -p /etc/pacman.d/hooks
     printf '%s\n' \
       '[Action]' \
@@ -114,16 +111,6 @@ resource "coder_agent" "main" {
     pacman -Sy --needed --noconfirm --disable-sandbox \
       --assume-installed sudo=1.9.17.p2-2 \
       apparmor bash binutils curl git nodejs github-cli glab zstd
-    if ! command -v sudo >/dev/null 2>&1; then
-      pacman -Sw --noconfirm --disable-sandbox sudo
-      SUDO_PKG="$(find /var/cache/pacman/pkg -maxdepth 1 -name 'sudo-*.pkg.tar.zst' | sort -V | tail -1)"
-      if [ ! -f "$SUDO_PKG" ]; then
-        echo "dkai-arch: expected sudo package under /var/cache/pacman/pkg after pacman -Sw" >&2
-        exit 1
-      fi
-      bsdtar -xf "$SUDO_PKG" -C /
-      pacman -U --dbonly --noconfirm --disable-sandbox "$SUDO_PKG"
-    fi
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -132,8 +119,6 @@ resource "coder_agent" "main" {
         useradd -m -u 1000 -s /bin/bash coder
       fi
     fi
-    echo 'coder ALL=(ALL) NOPASSWD: ALL' >/etc/sudoers.d/coder
-    chmod 440 /etc/sudoers.d/coder
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
     # Default workspace for Cursor module (folder = /home/coder/git); ensure it exists on fresh PVC.
@@ -158,7 +143,7 @@ resource "coder_agent" "main" {
       curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     fi
     if [ ! -f /home/coder/.local/bin/agent ]; then
-      sudo -u coder -- bash -c 'curl -fsSL https://cursor.com/install | bash'
+      runuser -u coder -- bash -c 'curl -fsSL https://cursor.com/install | bash'
     fi
     # Add ~/.local/bin to PATH for coder user (.bashrc + .profile for login shells e.g. Cursor terminal)
     CURSOR_PATH='export PATH="$HOME/.local/bin:$PATH"'
