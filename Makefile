@@ -20,12 +20,16 @@ endif
 TF_PLUGIN_CACHE_DIR ?= $(CURDIR)/.terraform.d/plugin-cache
 export TF_PLUGIN_CACHE_DIR
 
-.PHONY: test test-all fmt-check init validate clean fmt debug
+.PHONY: test test-all fmt-check init validate clean fmt debug check-dkai-startup
 
 # Validate all templates (init, validate, format check)
 test: test-all
 
-test-all: ensure-plugin-cache init validate fmt-check
+test-all: ensure-plugin-cache init validate fmt-check check-dkai-startup
+
+# Shell syntax check on dkai-arch startup_script (Terraform $$ → $ as Coder sees it)
+check-dkai-startup:
+	$(Q)scripts/check-dkai-startup-shell.sh
 
 # Ensure plugin cache dir exists (avoids Terraform CLI config warnings)
 ensure-plugin-cache:

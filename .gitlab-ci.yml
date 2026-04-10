@@ -40,6 +40,11 @@ test:dkai-arch:
   <<: *test_template
   variables:
     TEMPLATE_NAME: dkai-arch
+  script:
+    - terraform init -backend=false
+    - terraform validate
+    - terraform fmt -check -recursive -diff
+    - cd "$CI_PROJECT_DIR" && bash scripts/check-dkai-startup-shell.sh
 
 push-to-coder:
   stage: deploy

@@ -112,11 +112,12 @@ resource "coder_agent" "main" {
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
     # Trim GitHub release tag with sed (avoid bash prefix-strip; Terraform treats dollar-brace as template syntax in this block).
     GH_URL=$$(curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w '%%{url_effective}' https://github.com/cli/cli/releases/latest 2>/dev/null) || true
-    GH_VERSION=$$(echo "$$GH_URL" | sed -nE 's|^.*/tag/v([0-9]+\.[0-9]+\.[0-9]+).*$$|\1|p')
+    GH_TAG=$$(basename "$$GH_URL" 2>/dev/null || true)
+    GH_VERSION=$$(T="$$GH_TAG" python3 -c "import os; print(os.environ.get('T','').removeprefix('v'))" 2>/dev/null) || true
     [ -n "$$GH_VERSION" ] || GH_VERSION=2.89.0
     GH_CUR=
     if command -v gh >/dev/null 2>&1; then
-      GH_CUR=$$(gh version 2>/dev/null | head -n1 | sed -E 's/^gh version ([0-9.]+).*/\1/')
+      GH_CUR=$$(gh version 2>/dev/null | head -n1 | sed -E "s/^gh version ([0-9.]+).*/\\1/")
     fi
     if [ "$$GH_CUR" != "$$GH_VERSION" ]; then
       curl -fsSL "https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tgz
@@ -124,11 +125,11 @@ resource "coder_agent" "main" {
       install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
       rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
     fi
-    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c 'import sys,json; t=json.load(sys.stdin)["tag_name"]; print(t.removeprefix("v"))') || true
+    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c "import sys,json; t=json.load(sys.stdin)['tag_name']; print(t.removeprefix('v'))") || true
     [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
     GLAB_CUR=
     if command -v glab >/dev/null 2>&1; then
-      GLAB_CUR=$$(glab version 2>/dev/null | head -n1 | sed -E 's/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+      GLAB_CUR=$$(glab version 2>/dev/null | head -n1 | sed -E "s/.*([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/")
     fi
     if [ "$$GLAB_CUR" != "$$GLAB_VERSION" ]; then
       curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v$${GLAB_VERSION}/downloads/glab_$${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz
