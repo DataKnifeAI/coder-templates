@@ -30,6 +30,11 @@ alwaysApply: false
 - **Cursor CLI**: `registry.coder.com/coder-labs/cursor-cli/coder` (version 0.3.0)
 - Browse more at [Coder Registry](https://registry.coder.com)
 
+## Cursor 3 (local IDE: Glass vs Classic)
+
+- **Glass** layout: rewritten UI; standard **VS Code–compatible extensions** (including **Coder**) may not work.
+- **Classic** layout: restores **full VS Code extension compatibility**. Switch in Cursor settings if Coder Remote or other marketplace extensions misbehave after a Cursor 3 upgrade.
+
 ## Formatting
 
 - Run `make fmt` or `terraform fmt -recursive` before commit
