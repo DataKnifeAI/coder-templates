@@ -180,7 +180,7 @@ resource "coder_agent" "main" {
     if [ ! -f /home/coder/.local/bin/agent ]; then
       mkdir -p /home/coder/.local
       chown coder:coder /home/coder/.local 2>/dev/null || true
-      curl -fsSL https://cursor.com/install | env HOME=/home/coder USER=coder LOGNAME=coder bash
+      curl -fsSL https://cursor.com/install | env HOME=/home/coder USER=coder LOGNAME=coder TAR_OPTIONS=--no-same-owner bash
       chown -R coder:coder /home/coder/.local /home/coder/.cursor 2>/dev/null || true
     fi
     if [ -f "$CURSOR_SANDBOX_PROFILE" ] && command -v apparmor_parser >/dev/null 2>&1; then
