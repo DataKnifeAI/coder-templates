@@ -110,11 +110,10 @@ resource "coder_agent" "main" {
     pacman -Sy --needed --noconfirm --disable-sandbox \
       apparmor bash binutils curl git nodejs zstd
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
+    # Trim GitHub release tag with sed (avoid bash prefix-strip; Terraform treats dollar-brace as template syntax in this block).
     GH_URL=$$(curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w '%%{url_effective}' https://github.com/cli/cli/releases/latest 2>/dev/null) || true
-    case "$$GH_URL" in
-      */tag/v*.*) GH_VERSION=$${GH_URL##*/v} ;;
-      *)          GH_VERSION=2.89.0 ;;
-    esac
+    GH_VERSION=$$(echo "$$GH_URL" | sed -nE 's|^.*/tag/v([0-9]+\.[0-9]+\.[0-9]+).*$$|\1|p')
+    [ -n "$$GH_VERSION" ] || GH_VERSION=2.89.0
     GH_CUR=
     if command -v gh >/dev/null 2>&1; then
       GH_CUR=$$(gh version 2>/dev/null | head -n1 | sed -E 's/^gh version ([0-9.]+).*/\1/')
@@ -125,7 +124,7 @@ resource "coder_agent" "main" {
       install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
       rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
     fi
-    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c 'import sys,json; t=json.load(sys.stdin)["tag_name"]; print(t[1:] if t.startswith("v") else t)') || true
+    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c 'import sys,json; t=json.load(sys.stdin)["tag_name"]; print(t.removeprefix("v"))') || true
     [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
     GLAB_CUR=
     if command -v glab >/dev/null 2>&1; then
