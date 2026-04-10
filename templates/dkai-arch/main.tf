@@ -119,31 +119,35 @@ resource "coder_agent" "main" {
     T="$$GH_TAG" python3 -c "import os; print(os.environ.get(\"T\",\"\").removeprefix(\"v\"))" 2>/dev/null > /tmp/dkai-gh-ver || true
     read -r GH_VERSION < /tmp/dkai-gh-ver || true
     [ -n "$$GH_VERSION" ] || GH_VERSION=2.89.0
+    printf "%s" "$$GH_VERSION" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || GH_VERSION=2.89.0
     GH_CUR=
     if command -v gh >/dev/null 2>&1; then
       gh version 2>/dev/null | head -n1 | sed -E "s/^gh version ([0-9.]+).*/\\1/" > /tmp/dkai-gh-cur || true
       read -r GH_CUR < /tmp/dkai-gh-cur || true
     fi
     if [ "$$GH_CUR" != "$$GH_VERSION" ]; then
-      curl -fsSL "https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tgz
-      tar -xzf /tmp/gh.tgz -C /tmp
-      install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
-      rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
+      if curl -fsSL "https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tgz; then
+        tar -xzf /tmp/gh.tgz -C /tmp
+        install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+        rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
+      fi
     fi
     curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" -o /tmp/dkai-glab-json 2>/dev/null || true
     python3 -c "import sys,json; t=json.load(sys.stdin)[\"tag_name\"]; print(t.removeprefix(\"v\"))" < /tmp/dkai-glab-json > /tmp/dkai-glab-ver 2>/dev/null || true
     read -r GLAB_VERSION < /tmp/dkai-glab-ver || true
     [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
+    printf "%s" "$$GLAB_VERSION" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || GLAB_VERSION=1.92.0
     GLAB_CUR=
     if command -v glab >/dev/null 2>&1; then
       glab version 2>/dev/null | head -n1 | sed -E "s/.*([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/" > /tmp/dkai-glab-cur || true
       read -r GLAB_CUR < /tmp/dkai-glab-cur || true
     fi
     if [ "$$GLAB_CUR" != "$$GLAB_VERSION" ]; then
-      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v$${GLAB_VERSION}/downloads/glab_$${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz
-      tar -xzf /tmp/glab.tgz -C /tmp
-      install -m 0755 /tmp/bin/glab /usr/local/bin/glab
-      rm -rf /tmp/bin /tmp/glab.tgz
+      if curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v$${GLAB_VERSION}/downloads/glab_$${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz; then
+        tar -xzf /tmp/glab.tgz -C /tmp
+        install -m 0755 /tmp/bin/glab /usr/local/bin/glab
+        rm -rf /tmp/bin /tmp/glab.tgz
+      fi
     fi
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
