@@ -183,6 +183,10 @@ resource "coder_agent" "main" {
       curl -fsSL https://cursor.com/install | env HOME=/home/coder USER=coder LOGNAME=coder TAR_OPTIONS=--no-same-owner bash
       chown -R coder:coder /home/coder/.local /home/coder/.cursor 2>/dev/null || true
     fi
+    # Cursor agent installs under HOME/.local/bin; terminals often start as root — symlink into PATH.
+    if [ -e /home/coder/.local/bin/agent ]; then
+      ln -sf /home/coder/.local/bin/agent /usr/local/bin/agent
+    fi
     if [ -f "$CURSOR_SANDBOX_PROFILE" ] && command -v apparmor_parser >/dev/null 2>&1; then
       apparmor_parser -r "$CURSOR_SANDBOX_PROFILE" 2>/dev/null || true
     fi
@@ -205,9 +209,9 @@ resource "coder_agent" "main" {
     if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo "  gh: not found"; fi
     if command -v glab >/dev/null 2>&1; then glab version 2>/dev/null | head -n1; else echo "  glab: not found"; fi
     if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo "  coder: not found"; fi
-    if [ -x /home/coder/.local/bin/agent ]; then
+    if command -v agent >/dev/null 2>&1; then
       echo -n "  cursor (agent): "
-      /home/coder/.local/bin/agent --version 2>/dev/null || echo "(no version string)"
+      agent --version 2>/dev/null || echo "(no version string)"
     else
       echo "  cursor (agent): not installed"
     fi
