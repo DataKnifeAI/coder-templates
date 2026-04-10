@@ -179,7 +179,7 @@ resource "coder_agent" "main" {
     fi
     if [ ! -f /home/coder/.local/bin/agent ]; then
       mkdir -p /home/coder/.local
-      chown coder:coder /home/coder/.local
+      chown coder:coder /home/coder/.local 2>/dev/null || true
       curl -fsSL https://cursor.com/install | env HOME=/home/coder USER=coder LOGNAME=coder bash
       chown -R coder:coder /home/coder/.local /home/coder/.cursor 2>/dev/null || true
     fi
