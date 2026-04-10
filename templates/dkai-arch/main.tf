@@ -98,9 +98,32 @@ resource "coder_agent" "main" {
   }
   startup_script = <<-EOT
     set -e
-    # Pod runs as root (see deployment); pacman installs tools, then we use UID 1000 under /home/coder.
+    # Pod runs as root (see deployment); pacman installs tools, then UID 1000 under /home/coder.
+    #
+    # Kubernetes + some Arch post-transaction hooks (ConditionNeedsUpdate, detect-old-perl-modules)
+    # invoke sudo; installing sudo via a normal transaction can yield:
+    #   sudo: unable to execute /usr/bin/bash: Permission denied
+    # So: mask the perl hook, satisfy sudo deps with --assume-installed, then install sudo without hooks.
+    mkdir -p /etc/pacman.d/hooks
+    printf '%s\n' \
+      '[Action]' \
+      'Description = Skip old perl modules check (Coder/K8s; avoids sudo in hook)' \
+      'When = PostTransaction' \
+      'Exec = /usr/bin/true' \
+      >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git nodejs github-cli glab sudo zstd
+      --assume-installed sudo=1.9.17.p2-2 \
+      apparmor bash binutils curl git nodejs github-cli glab zstd
+    if ! command -v sudo >/dev/null 2>&1; then
+      pacman -Sw --noconfirm --disable-sandbox sudo
+      SUDO_PKG="$(find /var/cache/pacman/pkg -maxdepth 1 -name 'sudo-*.pkg.tar.zst' | sort -V | tail -1)"
+      if [ ! -f "$SUDO_PKG" ]; then
+        echo "dkai-arch: expected sudo package under /var/cache/pacman/pkg after pacman -Sw" >&2
+        exit 1
+      fi
+      bsdtar -xf "$SUDO_PKG" -C /
+      pacman -U --dbonly --noconfirm --disable-sandbox "$SUDO_PKG"
+    fi
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
