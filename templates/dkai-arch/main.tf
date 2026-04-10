@@ -99,18 +99,44 @@ resource "coder_agent" "main" {
   startup_script = <<-EOT
     set -e
     # Pod runs as root (see deployment); pacman installs tools, then UID 1000 under /home/coder.
-    # gh/glab depend on sudo; we do not install sudo. Satisfy deps with --assume-installed and mask
-    # detect-old-perl-modules (post-transaction hooks otherwise invoke sudo on some K8s nodes).
+    # Mask detect-old-perl-modules: that hook can invoke sudo on some K8s nodes (bash permission denied).
     mkdir -p /etc/pacman.d/hooks
     printf '%s\n' \
       '[Action]' \
-      'Description = Skip old perl modules check (Coder/K8s; avoids sudo in hook)' \
+      'Description = Skip old perl modules check (Coder/K8s)' \
       'When = PostTransaction' \
       'Exec = /usr/bin/true' \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      --assume-installed sudo=1.9.17.p2-2 \
-      apparmor bash binutils curl git nodejs github-cli glab zstd
+      apparmor bash binutils curl git nodejs zstd
+    # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
+    GH_URL=$$(curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w '%%{url_effective}' https://github.com/cli/cli/releases/latest 2>/dev/null) || true
+    case "$$GH_URL" in
+      */tag/v*.*) GH_VERSION=$${GH_URL##*/v} ;;
+      *)          GH_VERSION=2.89.0 ;;
+    esac
+    GH_CUR=
+    if command -v gh >/dev/null 2>&1; then
+      GH_CUR=$$(gh version 2>/dev/null | head -n1 | sed -E 's/^gh version ([0-9.]+).*/\1/')
+    fi
+    if [ "$$GH_CUR" != "$$GH_VERSION" ]; then
+      curl -fsSL "https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tgz
+      tar -xzf /tmp/gh.tgz -C /tmp
+      install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
+      rm -rf "/tmp/gh_$${GH_VERSION}_linux_amd64" /tmp/gh.tgz
+    fi
+    GLAB_VERSION=$$(curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" 2>/dev/null | python3 -c 'import sys,json; t=json.load(sys.stdin)["tag_name"]; print(t[1:] if t.startswith("v") else t)') || true
+    [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
+    GLAB_CUR=
+    if command -v glab >/dev/null 2>&1; then
+      GLAB_CUR=$$(glab version 2>/dev/null | head -n1 | sed -E 's/.*([0-9]+\.[0-9]+\.[0-9]+).*/\1/')
+    fi
+    if [ "$$GLAB_CUR" != "$$GLAB_VERSION" ]; then
+      curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v$${GLAB_VERSION}/downloads/glab_$${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz
+      tar -xzf /tmp/glab.tgz -C /tmp
+      install -m 0755 /tmp/bin/glab /usr/local/bin/glab
+      rm -rf /tmp/bin /tmp/glab.tgz
+    fi
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
