@@ -171,9 +171,6 @@ resource "coder_agent" "main" {
       ( cd /tmp/cursor-sandbox-apparmor-extract && ar x "$CURSOR_SANDBOX_DEB" data.tar.zst && zstd -dc data.tar.zst | tar -x -C / )
       rm -rf /tmp/cursor-sandbox-apparmor-extract
     fi
-    if [ -f "$CURSOR_SANDBOX_PROFILE" ] && command -v apparmor_parser >/dev/null 2>&1; then
-      apparmor_parser -r "$CURSOR_SANDBOX_PROFILE" 2>/dev/null || true
-    fi
     if [ -f /etc/sysctl.d/50-cursor-remote-userns.conf ]; then
       sysctl -p /etc/sysctl.d/50-cursor-remote-userns.conf 2>/dev/null || true
     fi
@@ -181,7 +178,13 @@ resource "coder_agent" "main" {
       curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     fi
     if [ ! -f /home/coder/.local/bin/agent ]; then
-      runuser -u coder -- bash -c "curl -fsSL https://cursor.com/install | bash"
+      mkdir -p /home/coder/.local
+      chown coder:coder /home/coder/.local
+      curl -fsSL https://cursor.com/install | env HOME=/home/coder USER=coder LOGNAME=coder bash
+      chown -R coder:coder /home/coder/.local /home/coder/.cursor 2>/dev/null || true
+    fi
+    if [ -f "$CURSOR_SANDBOX_PROFILE" ] && command -v apparmor_parser >/dev/null 2>&1; then
+      apparmor_parser -r "$CURSOR_SANDBOX_PROFILE" 2>/dev/null || true
     fi
     # Add ~/.local/bin to PATH for coder user (.bashrc + .profile for login shells e.g. Cursor terminal)
     for f in /home/coder/.bashrc /home/coder/.profile; do
