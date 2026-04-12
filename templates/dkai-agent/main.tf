@@ -99,10 +99,10 @@ data "coder_parameter" "cursor_pool_idle_timeout" {
 data "coder_parameter" "cursor_worker_git_url" {
   name         = "cursor_worker_git_url"
   display_name = "Cursor worker Git repo (HTTPS)"
-  description  = "HTTPS URL cloned with: cd /home/coder/git && git clone <url> (repo appears as /home/coder/git/<name>). Set empty to skip auto-clone."
+  description  = "HTTPS URL cloned with: cd /home/coder && git clone <url> (repo appears as /home/coder/<name>, e.g. agent-workspace). Set empty to skip auto-clone."
   type         = "string"
   form_type    = "input"
-  default      = "https://github.com/DataKnifeAI/agent-skills.git"
+  default      = "https://github.com/DataKnifeAI/agent-workspace.git"
   mutable      = true
   icon         = "/icon/github.svg"
 }
@@ -203,25 +203,24 @@ resource "coder_agent" "main" {
     fi
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
-    # Default repo path for pool worker; ensure a git clone with origin (Cursor pool worker requires it).
-    mkdir -p /home/coder/git
-    chown coder:coder /home/coder/git 2>/dev/null || true
+    # Default repo for pool worker: clone under /home/coder/<repo-name> (not under ~/git).
+    mkdir -p /home/coder
+    chown coder:coder /home/coder 2>/dev/null || true
     WORKER_GIT_URL="${trimspace(data.coder_parameter.cursor_worker_git_url.value)}"
     WORKER_REPO_NAME=
     if [ -n "$${WORKER_GIT_URL}" ]; then
       WORKER_REPO_NAME=`basename "$${WORKER_GIT_URL}" .git`
-      if [ ! -d "/home/coder/git/$${WORKER_REPO_NAME}/.git" ]; then
+      if [ ! -d "/home/coder/$${WORKER_REPO_NAME}/.git" ]; then
         # git clone with no path: creates a subdir with .git inside it
-        rm -rf "/home/coder/git/$${WORKER_REPO_NAME}"
-        mkdir -p /home/coder/git
-        cd /home/coder/git
+        rm -rf "/home/coder/$${WORKER_REPO_NAME}"
+        cd /home/coder
         git clone "$${WORKER_GIT_URL}"
-      elif ! git -C "/home/coder/git/$${WORKER_REPO_NAME}" remote get-url origin >/dev/null 2>&1; then
-        chown -R coder:coder "/home/coder/git/$${WORKER_REPO_NAME}" 2>/dev/null || true
-        git -C "/home/coder/git/$${WORKER_REPO_NAME}" remote add origin "$${WORKER_GIT_URL}" 2>/dev/null || \
-          git -C "/home/coder/git/$${WORKER_REPO_NAME}" remote set-url origin "$${WORKER_GIT_URL}"
+      elif ! git -C "/home/coder/$${WORKER_REPO_NAME}" remote get-url origin >/dev/null 2>&1; then
+        chown -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
+        git -C "/home/coder/$${WORKER_REPO_NAME}" remote add origin "$${WORKER_GIT_URL}" 2>/dev/null || \
+          git -C "/home/coder/$${WORKER_REPO_NAME}" remote set-url origin "$${WORKER_GIT_URL}"
       fi
-      chown -R coder:coder /home/coder/git 2>/dev/null || true
+      chown -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
     fi
     # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
     CURSOR_SANDBOX_DEB=/tmp/cursor-sandbox-apparmor.deb
@@ -256,7 +255,7 @@ set -euo pipefail
 # Self-hosted Cloud Agent pool — https://cursor.com/docs/cloud-agent/self-hosted-pool
 # Do not use VAR:-default style expansion here: Terraform parses dollar-brace in startup_script and corrupts the helper (e.g. 332REPO_ROOT).
 # With set -u, never expand optional env vars directly; use printenv into temp locals.
-REPO_ROOT="/home/coder/git"
+REPO_ROOT="/home/coder"
 POOL_CWD=$(printenv CURSOR_WORKER_DIR 2>/dev/null || true)
 if [ -n "$POOL_CWD" ]; then
   REPO_ROOT="$POOL_CWD"
@@ -277,7 +276,7 @@ exec agent worker start --pool --idle-release-timeout __IDLE_SEC__ "$${EXTRA[@]}
 POOLHELPER
     sed -i "s/__IDLE_SEC__/${data.coder_parameter.cursor_pool_idle_timeout.value}/" /home/coder/bin/start-cursor-pool-worker
     if [ -n "$${WORKER_REPO_NAME}" ]; then
-      sed -i "s|^REPO_ROOT=\"/home/coder/git\"|REPO_ROOT=\"/home/coder/git/$${WORKER_REPO_NAME}\"|" /home/coder/bin/start-cursor-pool-worker
+      sed -i "s|^REPO_ROOT=\"/home/coder\"|REPO_ROOT=\"/home/coder/$${WORKER_REPO_NAME}\"|" /home/coder/bin/start-cursor-pool-worker
     fi
     chmod 0755 /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
     # NFS / root_squash: chown may fail; 0755 still lets the coder user run the script as "other"
@@ -325,7 +324,7 @@ POOLHELPER
     echo "=== Cursor Cloud Agent (self-hosted pool) ==="
     echo "  Docs: https://cursor.com/docs/cloud-agent/self-hosted-pool"
     echo "  Prerequisites: team plan, self-hosted agents enabled, service account API key."
-    echo "  Worker repo: cursor_worker_git_url clones to /home/coder/git/<repo>/, or set CURSOR_WORKER_DIR."
+    echo "  Worker repo: cursor_worker_git_url clones to /home/coder/<repo>/, or set CURSOR_WORKER_DIR."
     echo "  Set CURSOR_API_KEY via workspace parameter cursor_api_key, or: export CURSOR_API_KEY=\"<key>\""
     echo "  Optional: export CURSOR_WORKER_LABELS_FILE=/home/coder/.cursor-worker-labels.json"
     echo "  Optional: export CURSOR_WORKER_MANAGEMENT_ADDR=:8080   # /metrics /healthz /readyz"
@@ -348,11 +347,11 @@ POOLHELPER
       fi
       sleep 1
       export HOME=/home/coder USER=coder LOGNAME=coder
-      mkdir -p /home/coder/git
+      mkdir -p /home/coder
       if [ -n "$${WORKER_REPO_NAME}" ]; then
-        cd "/home/coder/git/$${WORKER_REPO_NAME}" || cd /home/coder/git || true
+        cd "/home/coder/$${WORKER_REPO_NAME}" || cd /home/coder || true
       else
-        cd /home/coder/git || true
+        cd /home/coder || true
       fi
       nohup /home/coder/bin/start-cursor-pool-worker >>/tmp/cursor-pool-worker.log 2>&1 & echo $$! >/tmp/cursor-pool-worker.pid
       echo "cursor_pool: started in background (log: /tmp/cursor-pool-worker.log, pid: /tmp/cursor-pool-worker.pid)"

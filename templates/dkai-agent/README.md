@@ -17,7 +17,7 @@ Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, AppArmor sand
 - **Workspace parameter `cursor_api_key`** (optional, masked in the UI): when set, Coder injects **`CURSOR_API_KEY`** into the workspace via `coder_env`. Leave empty and export it yourself if you prefer not to store the key on the workspace.
 - **`start-cursor-pool-worker`** in `~/bin` and `/usr/local/bin`: runs `agent worker start --pool` with your workspace’s **idle-release timeout** (build parameter `cursor_pool_idle_timeout`, default 600 seconds). Honors:
   - **`CURSOR_API_KEY`** — from the parameter above, or a manual `export` ([service accounts](https://cursor.com/docs/account/enterprise/service-accounts)).
-  - **`CURSOR_WORKER_DIR`** — git repo root for the worker (default `/home/coder/git`).
+  - **`CURSOR_WORKER_DIR`** — git repo root for the worker (default `/home/coder/agent-workspace` when the template clones `cursor_worker_git_url`).
   - **`CURSOR_WORKER_LABELS_FILE`** — optional JSON/TOML labels ([labels](https://cursor.com/docs/cloud-agent/self-hosted-pool#labels)).
   - **`CURSOR_WORKER_MANAGEMENT_ADDR`** — e.g. `:8080` for `/metrics`, `/healthz`, `/readyz` on the worker.
 - **Example labels file**: `~/.cursor-worker-labels.json.example` (copy and customize).
@@ -27,7 +27,7 @@ Workers only need **outbound HTTPS**; no inbound ports are required.
 ## Quick start (inside the workspace)
 
 1. Enable **Allow Self-Hosted Agents** for your team and use a **service account** API key (see prerequisites in the [self-hosted pool docs](https://cursor.com/docs/cloud-agent/self-hosted-pool)).
-2. Clone the repository the worker should serve into `/home/coder/git` (or set `CURSOR_WORKER_DIR`).
+2. The template clones **`cursor_worker_git_url`** into `/home/coder/<repo-name>/` (default **`agent-workspace`**). Or set **`CURSOR_WORKER_DIR`** to another repo root.
 3. Set workspace parameter **`cursor_api_key`** (recommended): after the workspace is up, **`coder_script`** starts the pool worker in the background (logs: **`/tmp/cursor-pool-worker.log`**). Or leave it empty and configure manually:
 
    ```bash
@@ -68,7 +68,7 @@ coder ssh <workspace-name> -- sh -c 'pgrep -af "agent worker|./coder agent"; tes
 coder ssh <workspace-name> -- sh -c 'tail -100 /tmp/cursor-pool-autostart.log /tmp/cursor-pool-worker.log 2>&1'
 ```
 
-If **`CURSOR_API_KEY`** is missing in that SSH session, set the **`cursor_api_key`** workspace parameter or `export` it and run **`start-cursor-pool-worker`** manually from `/home/coder/git`.
+If **`CURSOR_API_KEY`** is missing in that SSH session, set the **`cursor_api_key`** workspace parameter or `export` it and run **`start-cursor-pool-worker`** manually from `/home/coder/agent-workspace` (or your **`CURSOR_WORKER_DIR`**).
 
 ### `kubectl` (correct context + namespace)
 
