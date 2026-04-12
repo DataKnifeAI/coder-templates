@@ -4,7 +4,7 @@
 
 .NOTPARALLEL:
 
-TEMPLATES := kubernetes dkai-dev dkai-arch
+TEMPLATES := kubernetes dkai-dev dkai-arch dkai-agent
 TERRAFORM := terraform
 
 # V=1 enables verbose/debug output
@@ -27,7 +27,7 @@ test: test-all
 
 test-all: ensure-plugin-cache init validate fmt-check check-dkai-startup
 
-# Shell syntax check on dkai-arch startup_script (Terraform $$ → $ as Coder sees it)
+# Shell syntax check on Arch template startup_scripts (Terraform $$ → $ as Coder sees it)
 check-dkai-startup:
 	$(Q)scripts/check-dkai-startup-shell.sh
 

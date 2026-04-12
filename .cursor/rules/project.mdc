@@ -7,7 +7,7 @@ alwaysApply: true
 
 Terraform-based Coder workspace templates for DataKnife.
 
-- **Templates**: `templates/kubernetes/`, `templates/dkai-dev/`, `templates/dkai-arch/`
+- **Templates**: `templates/kubernetes/`, `templates/dkai-dev/`, `templates/dkai-arch/`, `templates/dkai-agent/`
 - **Validation**: `make test` (init, validate, fmt-check)
 - **Docs**: `docs/build-parameters.md` — Coder parameter reference
 - **CI**: GitHub Actions + GitLab mirror; add new templates to `TEMPLATES` in Makefile and CI matrix

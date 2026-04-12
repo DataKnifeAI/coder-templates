@@ -9,7 +9,7 @@ alwaysApply: false
 ## Project Context
 
 - Custom Coder workspace templates for DataKnife
-- Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` (Cursor IDE + CLI via startup script, no subdomain; `dkai-arch` uses Arch Linux)
+- Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` / `dkai-agent` (Cursor IDE + CLI via startup script, no subdomain; Arch variants use `archlinux` image; `dkai-agent` adds self-hosted Cloud Agent pool helper)
 - Validate with `make test` before committing
 
 ## Coder Provider

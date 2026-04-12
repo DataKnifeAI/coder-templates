@@ -56,6 +56,12 @@ test:dkai-arch:
     - terraform fmt -check -recursive -diff
     - cd "$CI_PROJECT_DIR" && bash scripts/check-dkai-startup-shell.sh
 
+test:dkai-agent:
+  <<: *test_template
+  variables:
+    TEMPLATE_NAME: dkai-agent
+  # Startup shell is checked in test:dkai-arch (scripts/check-dkai-startup-shell.sh covers all Arch templates)
+
 push-to-coder:
   stage: deploy
   tags:
@@ -65,13 +71,14 @@ push-to-coder:
     - test:kubernetes
     - test:dkai-dev
     - test:dkai-arch
+    - test:dkai-agent
   before_script:
     - apt-get update && apt-get install -y curl ca-certificates
     - curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     - coder version
   script:
     - |
-      for template in kubernetes dkai-dev dkai-arch; do
+      for template in kubernetes dkai-dev dkai-arch dkai-agent; do
         if [ -d "templates/$template" ]; then
           echo "Pushing template: $template"
           coder templates push "$template" --directory "templates/$template" --activate=false -y
