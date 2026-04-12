@@ -1,7 +1,7 @@
 ---
 display_name: Kubernetes (Arch, dkai-agent / Cursor pool)
 description: Arch Linux workspace tuned for Cursor Cloud Agent self-hosted pool workers
-icon: /icon/k8s.png
+icon: /icon/cursor.svg
 maintainer_github: coder
 verified: false
 tags: [kubernetes, container, archlinux, cursor, cloud-agent]
