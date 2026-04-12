@@ -99,7 +99,7 @@ data "coder_parameter" "cursor_pool_idle_timeout" {
 data "coder_parameter" "cursor_api_key" {
   name         = "cursor_api_key"
   display_name = "Cursor API key"
-  description  = "Optional. Service account API key for Cursor Cloud Agent pool workers (sets CURSOR_API_KEY in the workspace). Leave empty to configure manually. Stored with the workspace; prefer org secret stores for production."
+  description  = "Optional. Service account API key — sets CURSOR_API_KEY (coder_env) and auto-starts the pool worker via coder_script when the workspace is ready. Leave empty to start the worker manually. Stored with the workspace; prefer org secret stores for production."
   type         = "string"
   form_type    = "input"
   default      = ""
@@ -284,7 +284,8 @@ POOLHELPER
     echo "  Set CURSOR_API_KEY via workspace parameter cursor_api_key, or: export CURSOR_API_KEY=\"<key>\""
     echo "  Optional: export CURSOR_WORKER_LABELS_FILE=/home/coder/.cursor-worker-labels.json"
     echo "  Optional: export CURSOR_WORKER_MANAGEMENT_ADDR=:8080   # /metrics /healthz /readyz"
-    echo "  Run as coder:  start-cursor-pool-worker"
+    echo "  Pool worker: auto-starts via coder_script when cursor_api_key is set (logs: /tmp/cursor-pool-worker.log)"
+    echo "  Or run manually: start-cursor-pool-worker"
     echo "  (idle-release-timeout defaults from workspace parameter cursor_pool_idle_timeout)"
     echo ""
     echo "=== Other CLI (run as the workspace user) ==="
@@ -357,6 +358,42 @@ resource "coder_env" "cursor_api_key" {
   agent_id = coder_agent.main.id
   name     = "CURSOR_API_KEY"
   value    = data.coder_parameter.cursor_api_key.value
+}
+
+# Runs after the agent receives coder_env (CURSOR_API_KEY); startup_script alone cannot rely on that env.
+resource "coder_script" "cursor_pool_autostart" {
+  agent_id     = coder_agent.main.id
+  display_name = "Cursor pool worker"
+  icon         = "/icon/cursor.svg"
+  run_on_start = true
+  log_path     = "/tmp/cursor-pool-autostart.log"
+  timeout      = 300
+  script       = <<-EOT
+#!/bin/sh
+set -eu
+if [ -z "$${CURSOR_API_KEY:-}" ]; then
+  echo "cursor_pool_autostart: CURSOR_API_KEY not set; set workspace parameter cursor_api_key"
+  exit 0
+fi
+# Wait for startup_script to install the helper (startup may be non-blocking).
+i=0
+while [ ! -x /home/coder/bin/start-cursor-pool-worker ]; do
+  i=$((i + 1))
+  if [ "$i" -gt 120 ]; then
+    echo "cursor_pool_autostart: timeout waiting for start-cursor-pool-worker"
+    exit 1
+  fi
+  sleep 2
+done
+pkill -f 'agent worker start --pool' 2>/dev/null || true
+sleep 1
+export HOME=/home/coder USER=coder LOGNAME=coder
+mkdir -p /home/coder/git
+cd /home/coder/git
+nohup /home/coder/bin/start-cursor-pool-worker >>/tmp/cursor-pool-worker.log 2>&1 &
+echo "cursor_pool_autostart: started (see /tmp/cursor-pool-worker.log)"
+exit 0
+EOT
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {

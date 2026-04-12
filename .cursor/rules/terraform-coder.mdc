@@ -10,7 +10,7 @@ alwaysApply: false
 
 - Custom Coder workspace templates for DataKnife
 - **DKAI templates**: display name `DKAI <Template>` (e.g. DKAI DevPod, DKAI Arch, DKAI Agent); internal ID / directory `dkai-<template>` (`dkai-dev`, `dkai-arch`, `dkai-agent`).
-- Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` / `dkai-agent` (Cursor CLI via startup script, no subdomain; Arch variants use `archlinux` image; `dkai-arch` uses `coder/cursor` module for Desktop button; `dkai-agent` omits that module and adds self-hosted Cloud Agent pool helper)
+- Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` / `dkai-agent` (Cursor CLI via startup script, no subdomain; Arch variants use `archlinux` image; `dkai-arch` uses `coder/cursor` module for Desktop button; `dkai-agent` omits that module, uses `coder_script` + `coder_env` to auto-start Cursor pool worker when `cursor_api_key` is set)
 - Validate with `make test` before committing
 
 ## Coder Provider

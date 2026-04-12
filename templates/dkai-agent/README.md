@@ -28,24 +28,53 @@ Workers only need **outbound HTTPS**; no inbound ports are required.
 
 1. Enable **Allow Self-Hosted Agents** for your team and use a **service account** API key (see prerequisites in the [self-hosted pool docs](https://cursor.com/docs/cloud-agent/self-hosted-pool)).
 2. Clone the repository the worker should serve into `/home/coder/git` (or set `CURSOR_WORKER_DIR`).
-3. As user **`coder`**, either set **`cursor_api_key`** on the workspace (recommended for convenience) or:
+3. Set workspace parameter **`cursor_api_key`** (recommended): after the workspace is up, **`coder_script`** starts the pool worker in the background (logs: **`/tmp/cursor-pool-worker.log`**). Or leave it empty and configure manually:
 
    ```bash
    export CURSOR_API_KEY="your-service-account-api-key"
+   start-cursor-pool-worker
    ```
 
-4. Optionally: `export CURSOR_WORKER_LABELS_FILE=$HOME/.cursor-worker-labels.json`, then run **`start-cursor-pool-worker`**.
+4. Optionally set `CURSOR_WORKER_LABELS_FILE` / `CURSOR_WORKER_MANAGEMENT_ADDR` before the worker starts (or restart the workspace after changing them).
 
-The idle timeout is configurable as **`cursor_pool_idle_timeout`** (seconds).
+The idle timeout is **`cursor_pool_idle_timeout`** (seconds).
 
 ## Relationship to DKAI Arch
 
-Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds pool parameters, optional `coder_env` for the API key, `start-cursor-pool-worker`, and related docs.
+Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds pool parameters, `coder_env` + **`coder_script`** to auto-start the pool worker when **`cursor_api_key`** is set, `start-cursor-pool-worker`, and related docs.
 
 ## Prerequisites
 
 - **Cluster / namespace**: Same as other templates in this repo.
 - **Cursor**: Team plan and admin-enabled self-hosted agents; see the official docs above.
+
+## Debugging (Coder + kubectl)
+
+**Coder “Started” only means the pod and `coder agent` are up.** A worker appears under **Cursor → Cloud Agents → Self-hosted** only after `agent worker start --pool` is running and connected. If workspace parameter **`cursor_api_key`** is set, a **`coder_script`** runs after the agent receives **`coder_env`** and **auto-starts** the pool worker (logs: **`/tmp/cursor-pool-worker.log`**, script log: **`/tmp/cursor-pool-autostart.log`**).
+
+### `coder` CLI
+
+```bash
+coder login <your-coder-url>   # if needed
+coder show <workspace-name>    # e.g. copper-penguin-94 — check agent is connected / healthy
+coder ssh <workspace-name> -- sh -c 'pgrep -af "agent worker|./coder agent"; test -n "$CURSOR_API_KEY" && echo CURSOR_API_KEY=set || echo CURSOR_API_KEY=missing'
+coder ssh <workspace-name> -- sh -c 'tail -100 /tmp/cursor-pool-autostart.log /tmp/cursor-pool-worker.log 2>&1'
+```
+
+If **`CURSOR_API_KEY`** is missing in that SSH session, set the **`cursor_api_key`** workspace parameter or `export` it and run **`start-cursor-pool-worker`** manually from `/home/coder/git`.
+
+### `kubectl` (correct context + namespace)
+
+Workspace pods use labels such as `com.coder.workspace.name` and names `coder-<workspace-id>`. Replace **`<ns>`** with your template namespace (often `coder-workspaces`).
+
+```bash
+kubectl config use-context <cluster>
+kubectl get pods -n <ns> -l com.coder.workspace.name=<workspace-name>
+kubectl describe pod -n <ns> -l com.coder.workspace.name=<workspace-name>
+kubectl logs -n <ns> -l com.coder.workspace.name=<workspace-name> -c dev --tail=200
+```
+
+Use **`kubectl logs`** for startup script output if the pool worker fails during boot.
 
 ## Related
 

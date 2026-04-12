@@ -19,6 +19,7 @@ for name in "${TEMPLATES[@]}"; do
     | sed -e 's/\$\${/\${/g' \
           -e 's/%%{url_effective}/%{url_effective}/g' \
           -e 's/\$\$/\$/g' \
+    | sed '/^%{if/,/^%{endif~}/d' \
     >"$TMP"
 
   bash -n "$TMP"
