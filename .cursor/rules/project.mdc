@@ -8,7 +8,7 @@ alwaysApply: true
 Terraform-based Coder workspace templates for DataKnife.
 
 - **Templates**: `templates/kubernetes/`, `templates/dkai-dev/`, `templates/dkai-arch/`, `templates/dkai-agent/`
-- **DKAI naming**: Coder **display name** = `DKAI <Template>` (title case); **internal ID** = `dkai-<template>` (lowercase, dash-separated directory / `coder templates push` name).
+- **DKAI naming**: Coder **display name** = `DKAI <Template>` (e.g. DKAI DevPod, DKAI Arch, DKAI Agent); **internal ID** = `dkai-<template>` (`dkai-dev`, `dkai-arch`, `dkai-agent`). Template icons: DevPod `k8s.svg`, Arch `cursor.svg`, Agent `k8s.svg` (distinct roles in the UI).
 - **Validation**: `make test` (init, validate, fmt-check)
 - **Docs**: `docs/build-parameters.md` — Coder parameter reference
 - **CI**: GitHub Actions + GitLab mirror; add new templates to `TEMPLATES` in Makefile and CI matrix

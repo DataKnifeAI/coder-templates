@@ -9,7 +9,7 @@ alwaysApply: false
 ## Project Context
 
 - Custom Coder workspace templates for DataKnife
-- **DKAI templates**: display name `DKAI <Template>` (e.g. DKAI Dev, DKAI Arch, DKAI Agent); internal template ID / directory `dkai-<template>` (dash-separated, e.g. `dkai-dev`, `dkai-arch`, `dkai-agent`).
+- **DKAI templates**: display name `DKAI <Template>` (e.g. DKAI DevPod, DKAI Arch, DKAI Agent); internal ID / directory `dkai-<template>` (`dkai-dev`, `dkai-arch`, `dkai-agent`).
 - Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` / `dkai-agent` (Cursor IDE + CLI via startup script, no subdomain; Arch variants use `archlinux` image; `dkai-agent` adds self-hosted Cloud Agent pool helper)
 - Validate with `make test` before committing
 

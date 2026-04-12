@@ -1,15 +1,15 @@
 ---
-display_name: DKAI Dev
-description: Kubernetes workspace with Cursor IDE & CLI
-icon: /icon/k8s.png
+display_name: DKAI DevPod
+description: Cursor IDE on Kubernetes — Ubuntu base, 2/4 CPU, 4/8 GB RAM, persistent home
+icon: /icon/k8s.svg
 maintainer_github: coder
 verified: true
 tags: [kubernetes, container]
 ---
 
-# DKAI Dev
+# DKAI DevPod
 
-Provision Kubernetes Pods as [Coder workspaces](https://coder.com/docs/workspaces) with this example template.
+Kubernetes [Coder workspaces](https://coder.com/docs/workspaces) with Cursor Desktop integration (`coder/cursor` module) and an Ubuntu-based dev container.
 
 <!-- TODO: Add screenshot -->
 

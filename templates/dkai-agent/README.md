@@ -1,7 +1,7 @@
 ---
 display_name: DKAI Agent
-description: Arch Linux workspace for Cursor Cloud Agent self-hosted pool workers
-icon: /icon/cursor.svg
+description: Cursor Cloud Agent self-hosted pool on Kubernetes — Arch worker, pool CLI, optional API key parameter
+icon: /icon/k8s.svg
 maintainer_github: coder
 verified: false
 tags: [kubernetes, container, archlinux, cursor, cloud-agent]

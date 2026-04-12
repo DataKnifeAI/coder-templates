@@ -1,7 +1,7 @@
 ---
 display_name: DKAI Arch
-description: Arch Linux Kubernetes workspace with Cursor IDE & CLI
-icon: /icon/k8s.png
+description: Cursor IDE on Kubernetes — Arch Linux image, pacman toolchain, same layout as DKAI DevPod
+icon: /icon/cursor.svg
 maintainer_github: coder
 verified: false
 tags: [kubernetes, container, archlinux, cursor]
@@ -9,7 +9,7 @@ tags: [kubernetes, container, archlinux, cursor]
 
 # DKAI Arch
 
-Same layout as **DKAI Dev** (`dkai-dev`) (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `binutils` for `ar`, `zstd`, `nodejs`, `github-cli` (`gh`), `glab`). Cursor’s **`cursor-sandbox-apparmor`** `.deb` is unpacked with `ar` + `zstd` (not `dpkg`, which mishandles this package on Arch), then **`apparmor_parser -r`** is run so the profile loads even without systemd’s `apparmor.service` (the `.deb` postinst normally skips that in containers).
+Same layout as **DKAI DevPod** (`dkai-dev`) (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `binutils` for `ar`, `zstd`, `nodejs`, `github-cli` (`gh`), `glab`). Cursor’s **`cursor-sandbox-apparmor`** `.deb` is unpacked with `ar` + `zstd` (not `dpkg`, which mishandles this package on Arch), then **`apparmor_parser -r`** is run so the profile loads even without systemd’s `apparmor.service` (the `.deb` postinst normally skips that in containers).
 
 The Cursor module opens **`/home/coder/git`** (i.e. `~/git` for the `coder` user). That directory is created at startup if missing.
 
@@ -22,7 +22,7 @@ First start may take longer while packages sync and install.
 ## Prerequisites
 
 - **Cluster**: Existing Kubernetes namespace (same as other templates).
-- **Authentication**: Same as **DKAI Dev** (`dkai-dev`) / `kubernetes` (`~/.kube/config` or in-cluster ServiceAccount).
+- **Authentication**: Same as **DKAI DevPod** (`dkai-dev`) / `kubernetes` (`~/.kube/config` or in-cluster ServiceAccount).
 
 ## Architecture
 
