@@ -22,7 +22,7 @@ Topics covered include:
 
 | Template   | Parameters                                                                 |
 |-----------|----------------------------------------------------------------------------|
-| dkai-dev  | CPU (2/4 cores), Memory (4/8 GB), Home disk size (50–100 GB, monotonic ↑). Cursor IDE only (no subdomain). |
-| dkai-arch | Same parameters as dkai-dev. Arch Linux base image; Cursor IDE only (no subdomain). |
-| dkai-agent | Same as dkai-arch, plus **cursor_pool_idle_timeout** (30–86400 s, default 600) for `agent worker start --pool` via `start-cursor-pool-worker`, and optional **cursor_api_key** (masked string; sets `CURSOR_API_KEY` via `coder_env` when non-empty). |
+| DKAI Dev (`dkai-dev`) | CPU (2/4 cores), Memory (4/8 GB), Home disk size (50–100 GB, monotonic ↑). Cursor IDE only (no subdomain). |
+| DKAI Arch (`dkai-arch`) | Same parameters as **DKAI Dev** (`dkai-dev`). Arch Linux base image; Cursor IDE only (no subdomain). |
+| DKAI Agent (`dkai-agent`) | Same as DKAI Arch, plus **cursor_pool_idle_timeout** (30–86400 s, default 600) for `agent worker start --pool` via `start-cursor-pool-worker`, and optional **cursor_api_key** (masked string; sets `CURSOR_API_KEY` via `coder_env` when non-empty). |
 | kubernetes| See [templates/kubernetes/README.md](../templates/kubernetes/README.md)   |

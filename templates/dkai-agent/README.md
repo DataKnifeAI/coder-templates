@@ -1,19 +1,19 @@
 ---
-display_name: Kubernetes (Arch, dkai-agent / Cursor pool)
-description: Arch Linux workspace tuned for Cursor Cloud Agent self-hosted pool workers
+display_name: DKAI Agent
+description: Arch Linux workspace for Cursor Cloud Agent self-hosted pool workers
 icon: /icon/cursor.svg
 maintainer_github: coder
 verified: false
 tags: [kubernetes, container, archlinux, cursor, cloud-agent]
 ---
 
-# Remote development — Cursor Cloud Agent (self-hosted pool)
+# DKAI Agent
 
-Fork of **dkai-arch** with the same Arch Linux base, Cursor IDE module, AppArmor sandbox bits, and persistent `/home/coder`. This variant is aimed at **[Self-Hosted Pool](https://cursor.com/docs/cloud-agent/self-hosted-pool)** workers: centrally managed machines that connect outbound to Cursor’s cloud and run tool calls in your environment.
+Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, Cursor IDE module, AppArmor sandbox bits, and persistent `/home/coder`. This variant is aimed at **[Self-Hosted Pool](https://cursor.com/docs/cloud-agent/self-hosted-pool)** workers: centrally managed machines that connect outbound to Cursor’s cloud and run tool calls in your environment.
 
 ## What you get
 
-- **`agent` CLI** installed under `/home/coder/.local/bin` (and on `PATH`), same as dkai-arch.
+- **`agent` CLI** installed under `/home/coder/.local/bin` (and on `PATH`), same as DKAI Arch.
 - **Workspace parameter `cursor_api_key`** (optional, masked in the UI): when set, Coder injects **`CURSOR_API_KEY`** into the workspace via `coder_env`. Leave empty and export it yourself if you prefer not to store the key on the workspace.
 - **`start-cursor-pool-worker`** in `~/bin` and `/usr/local/bin`: runs `agent worker start --pool` with your workspace’s **idle-release timeout** (build parameter `cursor_pool_idle_timeout`, default 600 seconds). Honors:
   - **`CURSOR_API_KEY`** — from the parameter above, or a manual `export` ([service accounts](https://cursor.com/docs/account/enterprise/service-accounts)).
@@ -38,7 +38,7 @@ Workers only need **outbound HTTPS**; no inbound ports are required.
 
 The idle timeout is configurable as **`cursor_pool_idle_timeout`** (seconds).
 
-## Relationship to dkai-arch
+## Relationship to DKAI Arch
 
 Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, Cursor sandbox `.deb` extract, `coder` CLI). This template adds pool parameters, optional `coder_env` for the API key, the helper script, and related docs.
 

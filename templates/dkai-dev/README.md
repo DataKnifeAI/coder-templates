@@ -1,13 +1,13 @@
 ---
-display_name: Kubernetes (Deployment)
-description: Provision Kubernetes Deployments as Coder workspaces
+display_name: DKAI Dev
+description: Kubernetes workspace with Cursor IDE & CLI
 icon: /icon/k8s.png
 maintainer_github: coder
 verified: true
 tags: [kubernetes, container]
 ---
 
-# Remote Development on Kubernetes Pods
+# DKAI Dev
 
 Provision Kubernetes Pods as [Coder workspaces](https://coder.com/docs/workspaces) with this example template.
 
