@@ -9,7 +9,7 @@ tags: [kubernetes, container, archlinux, cursor, cloud-agent]
 
 # DKAI Agent
 
-Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, Cursor IDE module, AppArmor sandbox bits, and persistent `/home/coder`. This variant is aimed at **[Self-Hosted Pool](https://cursor.com/docs/cloud-agent/self-hosted-pool)** workers: centrally managed machines that connect outbound to Cursor’s cloud and run tool calls in your environment.
+Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, AppArmor sandbox bits, and persistent `/home/coder`, but **no Cursor Desktop button** in the Coder dashboard (agent/pool focus). Aimed at **[Self-Hosted Pool](https://cursor.com/docs/cloud-agent/self-hosted-pool)** workers: centrally managed machines that connect outbound to Cursor’s cloud and run tool calls in your environment.
 
 ## What you get
 
@@ -40,7 +40,7 @@ The idle timeout is configurable as **`cursor_pool_idle_timeout`** (seconds).
 
 ## Relationship to DKAI Arch
 
-Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, Cursor sandbox `.deb` extract, `coder` CLI). This template adds pool parameters, optional `coder_env` for the API key, the helper script, and related docs.
+Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds pool parameters, optional `coder_env` for the API key, `start-cursor-pool-worker`, and related docs.
 
 ## Prerequisites
 

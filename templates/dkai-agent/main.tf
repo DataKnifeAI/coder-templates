@@ -187,7 +187,7 @@ resource "coder_agent" "main" {
     fi
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
-    # Default workspace for Cursor module (folder = /home/coder/git); ensure it exists on fresh PVC.
+    # Default repo path for pool worker (see README); ensure it exists on fresh PVC.
     mkdir -p /home/coder/git
     chown coder:coder /home/coder/git 2>/dev/null || true
     # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
@@ -234,8 +234,9 @@ EXTRA=()
 exec agent worker start --pool --idle-release-timeout __IDLE_SEC__ "$${EXTRA[@]}" "$$@"
 POOLHELPER
     sed -i "s/__IDLE_SEC__/${data.coder_parameter.cursor_pool_idle_timeout.value}/" /home/coder/bin/start-cursor-pool-worker
-    chmod 0755 /home/coder/bin/start-cursor-pool-worker
-    chown coder:coder /home/coder/bin/start-cursor-pool-worker
+    chmod 0755 /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
+    # NFS / root_squash: chown may fail; 0755 still lets the coder user run the script as "other"
+    chown coder:coder /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
     ln -sf /home/coder/bin/start-cursor-pool-worker /usr/local/bin/start-cursor-pool-worker 2>/dev/null || true
     if [ ! -f /home/coder/.cursor-worker-labels.json.example ]; then
       printf "%s\n" \
@@ -356,17 +357,6 @@ resource "coder_env" "cursor_api_key" {
   agent_id = coder_agent.main.id
   name     = "CURSOR_API_KEY"
   value    = data.coder_parameter.cursor_api_key.value
-}
-
-# Cursor IDE - one-click button to launch Cursor Desktop
-# https://registry.coder.com/modules/coder/cursor
-# folder: default repo path (startup_script mkdir -p /home/coder/git)
-module "cursor" {
-  count    = data.coder_workspace.me.start_count
-  source   = "registry.coder.com/coder/cursor/coder"
-  version  = "1.4.1"
-  agent_id = coder_agent.main.id
-  folder   = "/home/coder/git"
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
