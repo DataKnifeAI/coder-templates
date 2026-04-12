@@ -20,7 +20,10 @@ endif
 TF_PLUGIN_CACHE_DIR ?= $(CURDIR)/.terraform.d/plugin-cache
 export TF_PLUGIN_CACHE_DIR
 
-.PHONY: test test-all fmt-check init validate clean fmt debug check-dkai-startup
+# Coder CLI: push from repo root with --directory templates/<name> (not cwd=. or upload has no .tf files)
+CODER_ORGANIZATION ?= coder
+
+.PHONY: test test-all fmt-check init validate clean fmt debug check-dkai-startup template-push push-dkai-agent
 
 # Validate all templates (init, validate, format check)
 test: test-all
@@ -74,3 +77,18 @@ clean:
 		rm -rf templates/$$template/.terraform; \
 		rm -f templates/$$template/.terraform.lock.hcl; \
 	done
+
+# Push a template to Coder (requires: coder login). Example: make template-push TEMPLATE=dkai-agent
+template-push:
+	@test -n "$(TEMPLATE)" || (echo "usage: make template-push TEMPLATE=dkai-agent [MSG=...]"; exit 1)
+	coder templates push "$(TEMPLATE)" \
+		--directory "$(CURDIR)/templates/$(TEMPLATE)" \
+		--yes \
+		--ignore-lockfile \
+		--variables-file "$(CURDIR)/templates/$(TEMPLATE)/terraform.tfvars" \
+		--variable use_kubeconfig=false \
+		-O "$(CODER_ORGANIZATION)" \
+		-m "$(if $(MSG),$(MSG),$(TEMPLATE): template push)"
+
+push-dkai-agent:
+	@$(MAKE) template-push TEMPLATE=dkai-agent MSG="$(MSG)"

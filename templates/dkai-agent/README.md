@@ -52,6 +52,13 @@ Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) 
 
 **Coder “Started” only means the pod and `coder agent` are up.** A worker appears under **Cursor → Cloud Agents → Self-hosted** only after `agent worker start --pool` is running and connected. If workspace parameter **`cursor_api_key`** is set, a **`coder_script`** runs after the agent receives **`coder_env`** and **auto-starts** the pool worker (logs: **`/tmp/cursor-pool-worker.log`**, script log: **`/tmp/cursor-pool-autostart.log`**).
 
+**Stuck at startup / “agent startup script exited with an error”:** The template uses **`startup_script_behavior = "blocking"`** so the main install finishes before **`coder_script`** runs (avoids the pool script timing out while `pacman` is still running). Inspect failures with:
+
+```bash
+./scripts/coder-workspace-debug.sh <workspace-name>
+# or: coder show <ws> && coder logs <ws> | tail -200
+```
+
 ### `coder` CLI
 
 ```bash

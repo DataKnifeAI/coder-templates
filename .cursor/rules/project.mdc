@@ -12,3 +12,13 @@ Terraform-based Coder workspace templates for DataKnife.
 - **Validation**: `make test` (init, validate, fmt-check)
 - **Docs**: `docs/build-parameters.md` — Coder parameter reference
 - **CI**: GitHub Actions + GitLab mirror; add new templates to `TEMPLATES` in Makefile and CI matrix
+- **Push templates (debug / testing)**:
+  - **Always run from the repo root** and pass **`--directory templates/<template-id>`**. The CLI uploads the current directory by default; pushing from the repo root without `--directory` fails with *no [.tf .tf.json] files* because Terraform lives under `templates/<name>/`.
+  - **Same flags as GitLab CI** (`.gitlab-ci.yml` `push-to-coder` job):  
+    `coder templates push "<template-id>" --directory "templates/<template-id>" --activate=false -y`  
+    Loop over `kubernetes`, `dkai-dev`, `dkai-arch`, `dkai-agent` as in CI when you need everything.
+  - **`--activate=false`** uploads a new version but does **not** make it the default. To test a workspace on that build: **`coder templates versions promote --template <id> --template-version <version_name> -O <org>`**, then **`coder update <workspace>`** (or rebuild from the UI). List versions with **`coder templates versions list <id>`**; pick the newest row or use JSON if needed.
+  - **Optional Makefile helpers** (extra Terraform flags for non-interactive push): **`make template-push TEMPLATE=dkai-agent`** or **`make push-dkai-agent`** — same `--directory` idea with absolute paths, `terraform.tfvars`, `--ignore-lockfile`, `-O coder`.
+  - **Verify after deploy**: **`coder show <workspace>`** (agent healthy / startup), **`coder logs <workspace>`** (errors at end of startup), **`./scripts/coder-workspace-debug.sh <name>`** for a bundled grep. **`coder provisioner jobs list -l 10`** if a push sits silent (import still running).
+  - **Terraform heredoc in `startup_script`**: use **`$${bash_var}`** when the rendered script must contain **`${bash_var}`** for the shell. A bare **`$$VAR`** can end up as literal **`$$`** in the running script (PID expansion). **`make test`** and `scripts/check-dkai-startup-shell.sh` catch some issues; runtime-only bugs need a push and **`coder logs`**.
+  - **Git “dubious ownership”** on NFS (e.g. dirs owned by `nobody` while you run as `root`): the dkai-agent template sets **`git config --system --add safe.directory '*'`** after installing Git so **`git status`** works from any UID in the workspace; narrow in a fork if your security model requires it.

@@ -96,10 +96,21 @@ data "coder_parameter" "cursor_pool_idle_timeout" {
   }
 }
 
+data "coder_parameter" "cursor_worker_git_url" {
+  name         = "cursor_worker_git_url"
+  display_name = "Cursor worker Git repo (HTTPS)"
+  description  = "HTTPS URL cloned with: cd /home/coder/git && git clone <url> (repo appears as /home/coder/git/<name>). Set empty to skip auto-clone."
+  type         = "string"
+  form_type    = "input"
+  default      = "https://github.com/DataKnifeAI/agent-skills.git"
+  mutable      = true
+  icon         = "/icon/github.svg"
+}
+
 data "coder_parameter" "cursor_api_key" {
   name         = "cursor_api_key"
   display_name = "Cursor API key"
-  description  = "Optional. Service account API key — sets CURSOR_API_KEY (coder_env) and auto-starts the pool worker via coder_script when the workspace is ready. Leave empty to start the worker manually. Stored with the workspace; prefer org secret stores for production."
+  description  = "Optional. Service account API key — sets CURSOR_API_KEY (coder_env) and auto-starts the pool worker at the end of startup when set. Leave empty to start the worker manually. Stored with the workspace; prefer org secret stores for production."
   type         = "string"
   form_type    = "input"
   default      = ""
@@ -121,6 +132,9 @@ data "coder_workspace_owner" "me" {}
 resource "coder_agent" "main" {
   os   = "linux"
   arch = "amd64"
+  # Blocking: workspace is not ready until this script exits. Do not add a second run_on_start coder_script for
+  # the pool — Coder runs multiple coder_scripts in parallel, which races and can SIGTERM scripts (see agent log).
+  startup_script_behavior = "blocking"
   display_apps {
     vscode = false
   }
@@ -137,6 +151,8 @@ resource "coder_agent" "main" {
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
       apparmor bash binutils curl git nodejs zstd
+    # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
+    git config --system --add safe.directory '*' 2>/dev/null || true
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
     # Trim GitHub release tag with sed; avoid bash prefix-strip here; Terraform treats dollar-brace as template syntax in this block.
     # Avoid apostrophe in curl -w; avoid command-substitution open-paren on one line if the agent strips dollar signs.
@@ -187,9 +203,26 @@ resource "coder_agent" "main" {
     fi
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
-    # Default repo path for pool worker (see README); ensure it exists on fresh PVC.
+    # Default repo path for pool worker; ensure a git clone with origin (Cursor pool worker requires it).
     mkdir -p /home/coder/git
     chown coder:coder /home/coder/git 2>/dev/null || true
+    WORKER_GIT_URL="${trimspace(data.coder_parameter.cursor_worker_git_url.value)}"
+    WORKER_REPO_NAME=
+    if [ -n "$${WORKER_GIT_URL}" ]; then
+      WORKER_REPO_NAME=`basename "$${WORKER_GIT_URL}" .git`
+      if [ ! -d "/home/coder/git/$${WORKER_REPO_NAME}/.git" ]; then
+        # git clone with no path: creates a subdir with .git inside it
+        rm -rf "/home/coder/git/$${WORKER_REPO_NAME}"
+        mkdir -p /home/coder/git
+        cd /home/coder/git
+        git clone "$${WORKER_GIT_URL}"
+      elif ! git -C "/home/coder/git/$${WORKER_REPO_NAME}" remote get-url origin >/dev/null 2>&1; then
+        chown -R coder:coder "/home/coder/git/$${WORKER_REPO_NAME}" 2>/dev/null || true
+        git -C "/home/coder/git/$${WORKER_REPO_NAME}" remote add origin "$${WORKER_GIT_URL}" 2>/dev/null || \
+          git -C "/home/coder/git/$${WORKER_REPO_NAME}" remote set-url origin "$${WORKER_GIT_URL}"
+      fi
+      chown -R coder:coder /home/coder/git 2>/dev/null || true
+    fi
     # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
     CURSOR_SANDBOX_DEB=/tmp/cursor-sandbox-apparmor.deb
     CURSOR_SANDBOX_PROFILE=/etc/apparmor.d/cursor-sandbox-remote
@@ -221,19 +254,31 @@ resource "coder_agent" "main" {
 #!/usr/bin/env bash
 set -euo pipefail
 # Self-hosted Cloud Agent pool — https://cursor.com/docs/cloud-agent/self-hosted-pool
-REPO_ROOT="$${CURSOR_WORKER_DIR:-/home/coder/git}"
-cd "$$REPO_ROOT" || { echo "Worker repo not found: $$REPO_ROOT (clone a repo or set CURSOR_WORKER_DIR)" >&2; exit 1; }
-if [ -z "$${CURSOR_API_KEY:-}" ]; then
+# Do not use VAR:-default style expansion here: Terraform parses dollar-brace in startup_script and corrupts the helper (e.g. 332REPO_ROOT).
+# With set -u, never expand optional env vars directly; use printenv into temp locals.
+REPO_ROOT="/home/coder/git"
+POOL_CWD=$(printenv CURSOR_WORKER_DIR 2>/dev/null || true)
+if [ -n "$POOL_CWD" ]; then
+  REPO_ROOT="$POOL_CWD"
+fi
+cd "$REPO_ROOT" || { echo "Worker repo not found: $REPO_ROOT (clone a repo or set CURSOR_WORKER_DIR)" >&2; exit 1; }
+POOL_KEY=$(printenv CURSOR_API_KEY 2>/dev/null || true)
+if [ -z "$POOL_KEY" ]; then
   echo "Export CURSOR_API_KEY with your Cursor service account API key, then re-run." >&2
   echo "Docs: https://cursor.com/docs/account/enterprise/service-accounts" >&2
   exit 1
 fi
 EXTRA=()
-[ -n "$${CURSOR_WORKER_MANAGEMENT_ADDR:-}" ] && EXTRA+=(--management-addr "$${CURSOR_WORKER_MANAGEMENT_ADDR}")
-[ -n "$${CURSOR_WORKER_LABELS_FILE:-}" ] && EXTRA+=(--labels-file "$${CURSOR_WORKER_LABELS_FILE}")
-exec agent worker start --pool --idle-release-timeout __IDLE_SEC__ "$${EXTRA[@]}" "$$@"
+POOL_MA=$(printenv CURSOR_WORKER_MANAGEMENT_ADDR 2>/dev/null || true)
+POOL_LF=$(printenv CURSOR_WORKER_LABELS_FILE 2>/dev/null || true)
+[ -n "$POOL_MA" ] && EXTRA+=(--management-addr "$POOL_MA")
+[ -n "$POOL_LF" ] && EXTRA+=(--labels-file "$POOL_LF")
+exec agent worker start --pool --idle-release-timeout __IDLE_SEC__ "$${EXTRA[@]}" "$@"
 POOLHELPER
     sed -i "s/__IDLE_SEC__/${data.coder_parameter.cursor_pool_idle_timeout.value}/" /home/coder/bin/start-cursor-pool-worker
+    if [ -n "$${WORKER_REPO_NAME}" ]; then
+      sed -i "s|^REPO_ROOT=\"/home/coder/git\"|REPO_ROOT=\"/home/coder/git/$${WORKER_REPO_NAME}\"|" /home/coder/bin/start-cursor-pool-worker
+    fi
     chmod 0755 /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
     # NFS / root_squash: chown may fail; 0755 still lets the coder user run the script as "other"
     chown coder:coder /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
@@ -280,11 +325,11 @@ POOLHELPER
     echo "=== Cursor Cloud Agent (self-hosted pool) ==="
     echo "  Docs: https://cursor.com/docs/cloud-agent/self-hosted-pool"
     echo "  Prerequisites: team plan, self-hosted agents enabled, service account API key."
-    echo "  Clone the repo the worker should serve under /home/coder/git (or set CURSOR_WORKER_DIR)."
+    echo "  Worker repo: cursor_worker_git_url clones to /home/coder/git/<repo>/, or set CURSOR_WORKER_DIR."
     echo "  Set CURSOR_API_KEY via workspace parameter cursor_api_key, or: export CURSOR_API_KEY=\"<key>\""
     echo "  Optional: export CURSOR_WORKER_LABELS_FILE=/home/coder/.cursor-worker-labels.json"
     echo "  Optional: export CURSOR_WORKER_MANAGEMENT_ADDR=:8080   # /metrics /healthz /readyz"
-    echo "  Pool worker: auto-starts via coder_script when cursor_api_key is set (logs: /tmp/cursor-pool-worker.log)"
+    echo "  Pool worker: auto-starts below when cursor_api_key is set (logs: /tmp/cursor-pool-worker.log)"
     echo "  Or run manually: start-cursor-pool-worker"
     echo "  (idle-release-timeout defaults from workspace parameter cursor_pool_idle_timeout)"
     echo ""
@@ -293,6 +338,29 @@ POOLHELPER
     echo "  GitLab:  glab auth login"
     echo "  Coder:   this workspace is linked; CLI elsewhere: coder login <your-coder-url>"
     echo ""
+    # Pool worker must run in this same script: a separate coder_script runs in parallel with startup_script and fails.
+    # Do not use pkill -f '…agent worker…': that pattern appears in this script's argv and matches the startup shell (SIGTERM).
+    if [ -n "$${CURSOR_API_KEY:-}" ] && [ -x /home/coder/bin/start-cursor-pool-worker ]; then
+      if [ -f /tmp/cursor-pool-worker.pid ]; then
+        oldpid="$(cat /tmp/cursor-pool-worker.pid 2>/dev/null || true)"
+        [ -n "$$oldpid" ] && kill "$$oldpid" 2>/dev/null || true
+        rm -f /tmp/cursor-pool-worker.pid
+      fi
+      sleep 1
+      export HOME=/home/coder USER=coder LOGNAME=coder
+      mkdir -p /home/coder/git
+      if [ -n "$${WORKER_REPO_NAME}" ]; then
+        cd "/home/coder/git/$${WORKER_REPO_NAME}" || cd /home/coder/git || true
+      else
+        cd /home/coder/git || true
+      fi
+      nohup /home/coder/bin/start-cursor-pool-worker >>/tmp/cursor-pool-worker.log 2>&1 & echo $$! >/tmp/cursor-pool-worker.pid
+      echo "cursor_pool: started in background (log: /tmp/cursor-pool-worker.log, pid: /tmp/cursor-pool-worker.pid)"
+    elif [ -z "$${CURSOR_API_KEY:-}" ]; then
+      echo "cursor_pool: CURSOR_API_KEY not set; set workspace parameter cursor_api_key to auto-start pool"
+    else
+      echo "cursor_pool: helper missing at /home/coder/bin/start-cursor-pool-worker"
+    fi
   EOT
 
   # The following metadata blocks are optional. They are used to display
@@ -353,47 +421,12 @@ POOLHELPER
 }
 
 # Inject pool worker API key when provided (avoid embedding secrets in startup_script).
+# Agent applies coder_env before running startup_script; pool autostart runs at end of startup_script.
 resource "coder_env" "cursor_api_key" {
   count    = trimspace(data.coder_parameter.cursor_api_key.value) != "" ? 1 : 0
   agent_id = coder_agent.main.id
   name     = "CURSOR_API_KEY"
   value    = data.coder_parameter.cursor_api_key.value
-}
-
-# Runs after the agent receives coder_env (CURSOR_API_KEY); startup_script alone cannot rely on that env.
-resource "coder_script" "cursor_pool_autostart" {
-  agent_id     = coder_agent.main.id
-  display_name = "Cursor pool worker"
-  icon         = "/icon/cursor.svg"
-  run_on_start = true
-  log_path     = "/tmp/cursor-pool-autostart.log"
-  timeout      = 300
-  script       = <<-EOT
-#!/bin/sh
-set -eu
-if [ -z "$${CURSOR_API_KEY:-}" ]; then
-  echo "cursor_pool_autostart: CURSOR_API_KEY not set; set workspace parameter cursor_api_key"
-  exit 0
-fi
-# Wait for startup_script to install the helper (startup may be non-blocking).
-i=0
-while [ ! -x /home/coder/bin/start-cursor-pool-worker ]; do
-  i=$((i + 1))
-  if [ "$i" -gt 120 ]; then
-    echo "cursor_pool_autostart: timeout waiting for start-cursor-pool-worker"
-    exit 1
-  fi
-  sleep 2
-done
-pkill -f 'agent worker start --pool' 2>/dev/null || true
-sleep 1
-export HOME=/home/coder USER=coder LOGNAME=coder
-mkdir -p /home/coder/git
-cd /home/coder/git
-nohup /home/coder/bin/start-cursor-pool-worker >>/tmp/cursor-pool-worker.log 2>&1 &
-echo "cursor_pool_autostart: started (see /tmp/cursor-pool-worker.log)"
-exit 0
-EOT
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {

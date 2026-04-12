@@ -50,6 +50,8 @@ make test
 | `make clean`| Remove `.terraform` and lock files                |
 | `make debug`| Run tests with verbose Terraform output (`V=1`)  |
 
+**Debug a live workspace** (Coder CLI + optional kubectl): `scripts/coder-workspace-debug.sh <workspace-name>`.
+
 ### Key Concepts
 
 - **Templates** = Terraform configs that provision workspace infrastructure
