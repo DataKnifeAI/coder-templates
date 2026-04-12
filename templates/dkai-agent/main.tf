@@ -82,10 +82,10 @@ data "coder_parameter" "home_disk_size" {
   }
 }
 
-data "coder_parameter" "cursor_pool_idle_timeout" {
-  name         = "cursor_pool_idle_timeout"
-  display_name = "Cursor pool idle release (seconds)"
-  description  = "After a Cloud Agent session ends, keep the pool worker connected this many seconds for follow-ups (see Cursor self-hosted pool). Used by ~/bin/start-cursor-pool-worker."
+data "coder_parameter" "cursor_worker_idle_timeout" {
+  name         = "cursor_worker_idle_timeout"
+  display_name = "Cursor worker idle release (seconds)"
+  description  = "After a Cloud Agent session ends, keep the worker connected this many seconds for follow-ups (see `agent worker start --help`). Used by ~/bin/start-cursor-worker (not team pool mode)."
   default      = "600"
   type         = "number"
   icon         = "/emojis/1f916.png"
@@ -110,7 +110,7 @@ data "coder_parameter" "cursor_worker_git_url" {
 data "coder_parameter" "cursor_api_key" {
   name         = "cursor_api_key"
   display_name = "Cursor API key"
-  description  = "Optional. Service account API key — sets CURSOR_API_KEY (coder_env) and auto-starts the pool worker at the end of startup when set. Leave empty to start the worker manually. Stored with the workspace; prefer org secret stores for production."
+  description  = "Optional. Your individual Cursor API key — sets CURSOR_API_KEY (coder_env) and auto-starts `agent worker start` (without --pool) when set. Create under Cursor Dashboard → Settings → Cursor Settings → API Keys. Usage is billed to your account; not team pool / service-account workers. Leave empty to export manually. Stored on the workspace; prefer org secret stores for production."
   type         = "string"
   form_type    = "input"
   default      = ""
@@ -133,7 +133,7 @@ resource "coder_agent" "main" {
   os   = "linux"
   arch = "amd64"
   # Blocking: workspace is not ready until this script exits. Do not add a second run_on_start coder_script for
-  # the pool — Coder runs multiple coder_scripts in parallel, which races and can SIGTERM scripts (see agent log).
+  # the Cursor worker — Coder runs multiple coder_scripts in parallel, which races and can SIGTERM scripts (see agent log).
   startup_script_behavior = "blocking"
   display_apps {
     vscode = false
@@ -203,7 +203,7 @@ resource "coder_agent" "main" {
     fi
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
-    # Default repo for pool worker: clone under /home/coder/<repo-name> (not under ~/git).
+    # Default repo for Cloud Agent worker: clone under /home/coder/<repo-name> (not under ~/git).
     mkdir -p /home/coder
     chown coder:coder /home/coder 2>/dev/null || true
     WORKER_GIT_URL="${trimspace(data.coder_parameter.cursor_worker_git_url.value)}"
@@ -249,39 +249,38 @@ resource "coder_agent" "main" {
     fi
     mkdir -p /home/coder/bin
     chown coder:coder /home/coder/bin 2>/dev/null || true
-    cat > /home/coder/bin/start-cursor-pool-worker <<'POOLHELPER'
+    cat > /home/coder/bin/start-cursor-worker <<'WORKERHELPER'
 #!/usr/bin/env bash
 set -euo pipefail
-# Self-hosted Cloud Agent pool — https://cursor.com/docs/cloud-agent/self-hosted-pool
+# Cursor Cloud Agent worker (individual API key; not team --pool). See: https://cursor.com/docs/cli/overview
 # Do not use VAR:-default style expansion here: Terraform parses dollar-brace in startup_script and corrupts the helper (e.g. 332REPO_ROOT).
 # With set -u, never expand optional env vars directly; use printenv into temp locals.
 REPO_ROOT="/home/coder"
-POOL_CWD=$(printenv CURSOR_WORKER_DIR 2>/dev/null || true)
-if [ -n "$POOL_CWD" ]; then
-  REPO_ROOT="$POOL_CWD"
+WORKER_CWD=$(printenv CURSOR_WORKER_DIR 2>/dev/null || true)
+if [ -n "$WORKER_CWD" ]; then
+  REPO_ROOT="$WORKER_CWD"
 fi
 cd "$REPO_ROOT" || { echo "Worker repo not found: $REPO_ROOT (clone a repo or set CURSOR_WORKER_DIR)" >&2; exit 1; }
-POOL_KEY=$(printenv CURSOR_API_KEY 2>/dev/null || true)
-if [ -z "$POOL_KEY" ]; then
-  echo "Export CURSOR_API_KEY with your Cursor service account API key, then re-run." >&2
-  echo "Docs: https://cursor.com/docs/account/enterprise/service-accounts" >&2
+API_KEY=$(printenv CURSOR_API_KEY 2>/dev/null || true)
+if [ -z "$API_KEY" ]; then
+  echo "Export CURSOR_API_KEY with your Cursor API key (Dashboard → Cursor Settings → API Keys), then re-run." >&2
   exit 1
 fi
 EXTRA=()
-POOL_MA=$(printenv CURSOR_WORKER_MANAGEMENT_ADDR 2>/dev/null || true)
-POOL_LF=$(printenv CURSOR_WORKER_LABELS_FILE 2>/dev/null || true)
-[ -n "$POOL_MA" ] && EXTRA+=(--management-addr "$POOL_MA")
-[ -n "$POOL_LF" ] && EXTRA+=(--labels-file "$POOL_LF")
-exec agent worker start --pool --idle-release-timeout __IDLE_SEC__ "$${EXTRA[@]}" "$@"
-POOLHELPER
-    sed -i "s/__IDLE_SEC__/${data.coder_parameter.cursor_pool_idle_timeout.value}/" /home/coder/bin/start-cursor-pool-worker
+WORKER_MA=$(printenv CURSOR_WORKER_MANAGEMENT_ADDR 2>/dev/null || true)
+WORKER_LF=$(printenv CURSOR_WORKER_LABELS_FILE 2>/dev/null || true)
+[ -n "$WORKER_MA" ] && EXTRA+=(--management-addr "$WORKER_MA")
+[ -n "$WORKER_LF" ] && EXTRA+=(--labels-file "$WORKER_LF")
+exec agent worker start --idle-release-timeout __IDLE_SEC__ "$${EXTRA[@]}" "$@"
+WORKERHELPER
+    sed -i "s/__IDLE_SEC__/${data.coder_parameter.cursor_worker_idle_timeout.value}/" /home/coder/bin/start-cursor-worker
     if [ -n "$${WORKER_REPO_NAME}" ]; then
-      sed -i "s|^REPO_ROOT=\"/home/coder\"|REPO_ROOT=\"/home/coder/$${WORKER_REPO_NAME}\"|" /home/coder/bin/start-cursor-pool-worker
+      sed -i "s|^REPO_ROOT=\"/home/coder\"|REPO_ROOT=\"/home/coder/$${WORKER_REPO_NAME}\"|" /home/coder/bin/start-cursor-worker
     fi
-    chmod 0755 /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
+    chmod 0755 /home/coder/bin/start-cursor-worker 2>/dev/null || true
     # NFS / root_squash: chown may fail; 0755 still lets the coder user run the script as "other"
-    chown coder:coder /home/coder/bin/start-cursor-pool-worker 2>/dev/null || true
-    ln -sf /home/coder/bin/start-cursor-pool-worker /usr/local/bin/start-cursor-pool-worker 2>/dev/null || true
+    chown coder:coder /home/coder/bin/start-cursor-worker 2>/dev/null || true
+    ln -sf /home/coder/bin/start-cursor-worker /usr/local/bin/start-cursor-worker 2>/dev/null || true
     if [ ! -f /home/coder/.cursor-worker-labels.json.example ]; then
       printf "%s\n" \
         "{" \
@@ -321,29 +320,28 @@ POOLHELPER
       echo "  cursor (agent): not installed"
     fi
     echo ""
-    echo "=== Cursor Cloud Agent (self-hosted pool) ==="
-    echo "  Docs: https://cursor.com/docs/cloud-agent/self-hosted-pool"
-    echo "  Prerequisites: team plan, self-hosted agents enabled, service account API key."
+    echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
+    echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"
     echo "  Worker repo: cursor_worker_git_url clones to /home/coder/<repo>/, or set CURSOR_WORKER_DIR."
     echo "  Set CURSOR_API_KEY via workspace parameter cursor_api_key, or: export CURSOR_API_KEY=\"<key>\""
     echo "  Optional: export CURSOR_WORKER_LABELS_FILE=/home/coder/.cursor-worker-labels.json"
     echo "  Optional: export CURSOR_WORKER_MANAGEMENT_ADDR=:8080   # /metrics /healthz /readyz"
-    echo "  Pool worker: auto-starts below when cursor_api_key is set (logs: /tmp/cursor-pool-worker.log)"
-    echo "  Or run manually: start-cursor-pool-worker"
-    echo "  (idle-release-timeout defaults from workspace parameter cursor_pool_idle_timeout)"
+    echo "  Worker: auto-starts below when cursor_api_key is set (logs: /tmp/cursor-worker.log)"
+    echo "  Or run manually: start-cursor-worker"
+    echo "  (idle-release-timeout defaults from workspace parameter cursor_worker_idle_timeout)"
     echo ""
     echo "=== Other CLI (run as the workspace user) ==="
     echo "  GitHub:  gh auth login"
     echo "  GitLab:  glab auth login"
     echo "  Coder:   this workspace is linked; CLI elsewhere: coder login <your-coder-url>"
     echo ""
-    # Pool worker must run in this same script: a separate coder_script runs in parallel with startup_script and fails.
+    # Cursor worker must run in this same script: a separate coder_script runs in parallel with startup_script and fails.
     # Do not use pkill -f '…agent worker…': that pattern appears in this script's argv and matches the startup shell (SIGTERM).
-    if [ -n "$${CURSOR_API_KEY:-}" ] && [ -x /home/coder/bin/start-cursor-pool-worker ]; then
-      if [ -f /tmp/cursor-pool-worker.pid ]; then
-        oldpid="$(cat /tmp/cursor-pool-worker.pid 2>/dev/null || true)"
+    if [ -n "$${CURSOR_API_KEY:-}" ] && [ -x /home/coder/bin/start-cursor-worker ]; then
+      if [ -f /tmp/cursor-worker.pid ]; then
+        oldpid="$(cat /tmp/cursor-worker.pid 2>/dev/null || true)"
         [ -n "$$oldpid" ] && kill "$$oldpid" 2>/dev/null || true
-        rm -f /tmp/cursor-pool-worker.pid
+        rm -f /tmp/cursor-worker.pid
       fi
       sleep 1
       export HOME=/home/coder USER=coder LOGNAME=coder
@@ -353,12 +351,12 @@ POOLHELPER
       else
         cd /home/coder || true
       fi
-      nohup /home/coder/bin/start-cursor-pool-worker >>/tmp/cursor-pool-worker.log 2>&1 & echo $$! >/tmp/cursor-pool-worker.pid
-      echo "cursor_pool: started in background (log: /tmp/cursor-pool-worker.log, pid: /tmp/cursor-pool-worker.pid)"
+      nohup /home/coder/bin/start-cursor-worker >>/tmp/cursor-worker.log 2>&1 & echo $$! >/tmp/cursor-worker.pid
+      echo "cursor_worker: started in background (log: /tmp/cursor-worker.log, pid: /tmp/cursor-worker.pid)"
     elif [ -z "$${CURSOR_API_KEY:-}" ]; then
-      echo "cursor_pool: CURSOR_API_KEY not set; set workspace parameter cursor_api_key to auto-start pool"
+      echo "cursor_worker: CURSOR_API_KEY not set; set workspace parameter cursor_api_key to auto-start worker"
     else
-      echo "cursor_pool: helper missing at /home/coder/bin/start-cursor-pool-worker"
+      echo "cursor_worker: helper missing at /home/coder/bin/start-cursor-worker"
     fi
   EOT
 
@@ -419,8 +417,8 @@ POOLHELPER
   }
 }
 
-# Inject pool worker API key when provided (avoid embedding secrets in startup_script).
-# Agent applies coder_env before running startup_script; pool autostart runs at end of startup_script.
+# Inject worker API key when provided (avoid embedding secrets in startup_script).
+# Agent applies coder_env before running startup_script; worker autostart runs at end of startup_script.
 resource "coder_env" "cursor_api_key" {
   count    = trimspace(data.coder_parameter.cursor_api_key.value) != "" ? 1 : 0
   agent_id = coder_agent.main.id

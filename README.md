@@ -13,7 +13,7 @@ This repository contains reusable Coder templates for provisioning development w
 | **kubernetes** | Kubernetes Deployments with code-server — base template for K8s workspaces |
 | **DKAI DevPod** (`dkai-dev`) | Cursor IDE on Kubernetes (Ubuntu) — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk (no subdomain required) |
 | **DKAI Arch** (`dkai-arch`) | Same as **DKAI DevPod** on **Arch Linux** (`archlinux` image, pacman, gh/glab from repos) |
-| **DKAI Agent** (`dkai-agent`) | **DKAI Arch** plus Cursor Cloud Agent **self-hosted pool** (`start-cursor-pool-worker`, idle timeout and optional API key parameter) |
+| **DKAI Agent** (`dkai-agent`) | **DKAI Arch** plus Cursor Cloud Agent worker (`start-cursor-worker`, individual API key, idle timeout; not team `--pool`) |
 
 ## References
 
