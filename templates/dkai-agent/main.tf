@@ -168,9 +168,10 @@ data "external" "tool_shared_pvc_exists" {
 }
 
 locals {
-  tool_shared_pvc_exists           = data.external.tool_shared_pvc_exists.result.exists == "true"
-  tool_config_shared_should_create = !local.tool_shared_pvc_exists
-  tool_config_shared_should_join   = local.tool_shared_pvc_exists
+  tool_shared_pvc_exists = data.external.tool_shared_pvc_exists.result.exists == "true"
+  # Import map: when the PVC already exists in the cluster, adopt it into this workspace's state so we
+  # never flip count 1→0 (which would plan a destroy on the next apply after the creating workspace).
+  tool_shared_pvc_import = local.tool_shared_pvc_exists ? { import = true } : {}
 }
 
 resource "coder_agent" "main" {
@@ -194,7 +195,7 @@ resource "coder_agent" "main" {
       "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git kubectl nano nodejs zstd
+      apparmor bash binutils curl git kubectl kubectx nano nodejs zstd
     # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
     git config --system --add safe.directory '*' 2>/dev/null || true
     # Optional CLI downloads must not fail the whole startup (set -e): network blips, bad semver, etc.
@@ -240,6 +241,7 @@ resource "coder_agent" "main" {
       fi
     fi
     # kubectl: installed from Arch extra (pacman above). Avoid dl.k8s.io curl — flaky behind some networks.
+    # kubectx Arch package installs kubectx + kubens (https://github.com/ahmetb/kubectx) — context/namespace switchers.
     # Rancher CLI: read Location from /releases/latest (no GitHub API — unauthenticated api.github.com is rate-limited in shared clusters).
     if ! command -v rancher >/dev/null 2>&1; then
       RANCHER_LOC=$(/usr/bin/curl -sI --no-styled-output -A "Mozilla/5.0" https://github.com/rancher/cli/releases/latest 2>/dev/null | grep -i '^[Ll]ocation:' | awk '{print $$2}' | tr -d '\r' | head -n1 || true)
@@ -273,12 +275,16 @@ resource "coder_agent" "main" {
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     _chown_coder -R coder:coder /home/coder 2>/dev/null || true
     # Second PVC (/mnt/coder-tool-config): tool CLIs persist under /root only (symlinks below).
-    mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli /mnt/coder-tool-config/config/coder /mnt/coder-tool-config/rancher
+    mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli /mnt/coder-tool-config/config/coderv2 /mnt/coder-tool-config/rancher
+    # Coder CLI v2 uses ~/.config/coderv2 (--global-config / $CODER_CONFIG_DIR), not ~/.config/coder.
+    if [ -d /mnt/coder-tool-config/config/coder ] && [ -z "$$(ls -A /mnt/coder-tool-config/config/coderv2 2>/dev/null)" ]; then
+      cp -a /mnt/coder-tool-config/config/coder/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
+    fi
     if ! grep -q '[[:space:]]/mnt/coder-tool-config[[:space:]]' /proc/mounts 2>/dev/null; then
       echo "WARN: /mnt/coder-tool-config is not listed in /proc/mounts — tool PVC may not be mounted; configs might not persist." >&2
     fi
     mkdir -p /home/coder/.config
-    # Merge then remove legacy /home/coder tool paths (older templates symlinked coder; we no longer link /home/coder to this PVC).
+    # Merge then remove legacy /home/coder tool paths (older templates symlinked paths; we no longer link /home/coder to this PVC).
     if [ -d /home/coder/.kube ] && [ ! -L /home/coder/.kube ]; then
       cp -a /home/coder/.kube/. /mnt/coder-tool-config/kube/ 2>/dev/null || true
       rm -rf /home/coder/.kube
@@ -291,8 +297,14 @@ resource "coder_agent" "main" {
     elif [ -L /home/coder/.config/gh ]; then
       rm -f /home/coder/.config/gh
     fi
+    if [ -d /home/coder/.config/coderv2 ] && [ ! -L /home/coder/.config/coderv2 ]; then
+      cp -a /home/coder/.config/coderv2/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
+      rm -rf /home/coder/.config/coderv2
+    elif [ -L /home/coder/.config/coderv2 ]; then
+      rm -f /home/coder/.config/coderv2
+    fi
     if [ -d /home/coder/.config/coder ] && [ ! -L /home/coder/.config/coder ]; then
-      cp -a /home/coder/.config/coder/. /mnt/coder-tool-config/config/coder/ 2>/dev/null || true
+      cp -a /home/coder/.config/coder/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
       rm -rf /home/coder/.config/coder
     elif [ -L /home/coder/.config/coder ]; then
       rm -f /home/coder/.config/coder
@@ -319,11 +331,15 @@ resource "coder_agent" "main" {
     rm -f /root/.config/glab 2>/dev/null
     rm -rf /root/.config/glab /root/.config/glab-cli 2>/dev/null
     ln -sfn /mnt/coder-tool-config/config/glab-cli /root/.config/glab-cli
+    if [ -d /root/.config/coderv2 ] && [ ! -L /root/.config/coderv2 ]; then
+      cp -a /root/.config/coderv2/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
+      rm -rf /root/.config/coderv2
+    fi
     if [ -d /root/.config/coder ] && [ ! -L /root/.config/coder ]; then
-      cp -a /root/.config/coder/. /mnt/coder-tool-config/config/coder/ 2>/dev/null || true
+      cp -a /root/.config/coder/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
       rm -rf /root/.config/coder
     fi
-    ln -sfn /mnt/coder-tool-config/config/coder /root/.config/coder
+    ln -sfn /mnt/coder-tool-config/config/coderv2 /root/.config/coderv2
     if [ -d /root/.rancher ] && [ ! -L /root/.rancher ]; then
       cp -a /root/.rancher/. /mnt/coder-tool-config/rancher/ 2>/dev/null || true
       rm -rf /root/.rancher
@@ -447,6 +463,8 @@ WORKERHELPER
     if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo "  gh: not found"; fi
     if command -v glab >/dev/null 2>&1; then glab version 2>/dev/null | head -n1; else echo "  glab: not found"; fi
     if command -v kubectl >/dev/null 2>&1; then kubectl version --client=true 2>/dev/null | head -n1 || echo "  kubectl: installed"; else echo "  kubectl: not found"; fi
+    if command -v kubectx >/dev/null 2>&1; then echo "  kubectx: installed"; else echo "  kubectx: not found"; fi
+    if command -v kubens >/dev/null 2>&1; then echo "  kubens: installed"; else echo "  kubens: not found"; fi
     if command -v rancher >/dev/null 2>&1; then rancher --version 2>/dev/null | head -n1 || echo "  rancher: installed"; else echo "  rancher: not found"; fi
     if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo "  coder: not found"; fi
     if command -v agent >/dev/null 2>&1; then
@@ -456,7 +474,7 @@ WORKERHELPER
       echo "  cursor (agent): not installed"
     fi
     echo ""
-    echo "Tool configs on second PVC: /mnt/coder-tool-config → /root only: .kube .config/{gh,glab-cli,coder} .rancher (symlinks)"
+    echo "Tool configs on second PVC: /mnt/coder-tool-config → /root only: .kube .config/{gh,glab-cli,coderv2} .rancher (symlinks)"
     echo ""
     echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
     echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"
@@ -608,7 +626,10 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "tool_shared_user" {
-  count = local.tool_config_shared_should_create ? 1 : 0
+  count = 1
+  lifecycle {
+    prevent_destroy = true
+  }
   metadata {
     name      = local.tool_config_user_pvc_name
     namespace = var.namespace
@@ -636,12 +657,11 @@ resource "kubernetes_persistent_volume_claim_v1" "tool_shared_user" {
   }
 }
 
-data "kubernetes_persistent_volume_claim_v1" "tool_shared_user_join" {
-  count = local.tool_config_shared_should_join ? 1 : 0
-  metadata {
-    name      = local.tool_config_user_pvc_name
-    namespace = var.namespace
-  }
+# Adopt pre-existing shared tool PVC into state (second+ workspace, or re-apply after create). Skipped if already in state.
+import {
+  for_each = local.tool_shared_pvc_import
+  to       = kubernetes_persistent_volume_claim_v1.tool_shared_user[0]
+  id       = "${var.namespace}/${local.tool_config_user_pvc_name}"
 }
 
 resource "kubernetes_deployment_v1" "main" {
@@ -649,7 +669,6 @@ resource "kubernetes_deployment_v1" "main" {
   depends_on = [
     kubernetes_persistent_volume_claim_v1.home,
     kubernetes_persistent_volume_claim_v1.tool_shared_user,
-    data.kubernetes_persistent_volume_claim_v1.tool_shared_user_join,
   ]
   wait_for_rollout = false
   metadata {
@@ -753,12 +772,8 @@ resource "kubernetes_deployment_v1" "main" {
         volume {
           name = "tool-config"
           persistent_volume_claim {
-            claim_name = (
-              local.tool_config_shared_should_join
-              ? data.kubernetes_persistent_volume_claim_v1.tool_shared_user_join[0].metadata[0].name
-              : kubernetes_persistent_volume_claim_v1.tool_shared_user[0].metadata[0].name
-            )
-            read_only = false
+            claim_name = kubernetes_persistent_volume_claim_v1.tool_shared_user[0].metadata[0].name
+            read_only  = false
           }
         }
 
