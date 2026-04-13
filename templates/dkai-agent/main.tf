@@ -276,11 +276,11 @@ resource "coder_agent" "main" {
       fi
     fi
     # kubectl: installed from Arch extra (pacman above). Avoid dl.k8s.io curl — flaky behind some networks.
-    # Rancher CLI (latest linux-amd64 .tar.gz from GitHub releases)
+    # Rancher CLI: read Location from /releases/latest (no GitHub API — unauthenticated api.github.com is rate-limited in shared clusters).
     if ! command -v rancher >/dev/null 2>&1; then
-      python3 -c "import json,urllib.request;r=json.load(urllib.request.urlopen('https://api.github.com/repos/rancher/cli/releases/latest'));a=[x for x in r['assets'] if 'linux-amd64' in x['name'] and x['name'].endswith('.tar.gz')];print(a[0]['browser_download_url'] if a else '')" > /tmp/dkai-rancher-url 2>/dev/null || true
-      read -r RANCHER_DL < /tmp/dkai-rancher-url || true
-      if [ -n "$${RANCHER_DL}" ] && curl -fsSL "$${RANCHER_DL}" -o /tmp/rancher-cli.tgz; then
+      RANCHER_LOC=$(/usr/bin/curl -sI --no-styled-output -A "Mozilla/5.0" https://github.com/rancher/cli/releases/latest 2>/dev/null | grep -i '^[Ll]ocation:' | awk '{print $$2}' | tr -d '\r' | head -n1 || true)
+      RANCHER_VER=$${RANCHER_LOC##*/}
+      if [ -n "$${RANCHER_VER}" ] && /usr/bin/curl -fsSL "https://github.com/rancher/cli/releases/download/$${RANCHER_VER}/rancher-linux-amd64-$${RANCHER_VER}.tar.gz" -o /tmp/rancher-cli.tgz; then
         mkdir -p /tmp/rancher-extract
         tar -xzf /tmp/rancher-cli.tgz -C /tmp/rancher-extract
         find /tmp/rancher-extract -name rancher -type f 2>/dev/null | head -n1 > /tmp/dkai-rancher-binpath
