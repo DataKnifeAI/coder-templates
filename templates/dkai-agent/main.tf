@@ -209,11 +209,16 @@ resource "coder_agent" "main" {
       fi
     fi
     # kubectl (Kubernetes official release binary; install once, upgrade by deleting /usr/local/bin/kubectl)
+    # Avoid $$(cmd): if Terraform/Coder leaves $$ as PID+paren, bash errors near '('.
     if ! command -v kubectl >/dev/null 2>&1; then
-      KUBECTL_VER=$$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null | tr -d '\r\n' || echo "v1.32.0")
+      curl -fsSL https://dl.k8s.io/release/stable.txt -o /tmp/kubectl-stable.txt 2>/dev/null || true
+      if [ ! -s /tmp/kubectl-stable.txt ]; then
+        printf '%s\n' "v1.32.0" > /tmp/kubectl-stable.txt
+      fi
+      read -r KUBECTL_VER < /tmp/kubectl-stable.txt
       curl -fsSL "https://dl.k8s.io/release/$${KUBECTL_VER}/bin/linux/amd64/kubectl" -o /tmp/kubectl.bin
       install -m 0755 /tmp/kubectl.bin /usr/local/bin/kubectl
-      rm -f /tmp/kubectl.bin
+      rm -f /tmp/kubectl.bin /tmp/kubectl-stable.txt
     fi
     # Rancher CLI (latest linux-amd64 .tar.gz from GitHub releases)
     if ! command -v rancher >/dev/null 2>&1; then
@@ -222,10 +227,12 @@ resource "coder_agent" "main" {
       if [ -n "$$RANCHER_DL" ] && curl -fsSL "$$RANCHER_DL" -o /tmp/rancher-cli.tgz; then
         mkdir -p /tmp/rancher-extract
         tar -xzf /tmp/rancher-cli.tgz -C /tmp/rancher-extract
-        RBIN=$$(find /tmp/rancher-extract -name rancher -type f 2>/dev/null | head -n1)
+        find /tmp/rancher-extract -name rancher -type f 2>/dev/null | head -n1 > /tmp/dkai-rancher-binpath
+        read -r RBIN < /tmp/dkai-rancher-binpath
         if [ -n "$$RBIN" ]; then
           install -m 0755 "$$RBIN" /usr/local/bin/rancher
         fi
+        rm -f /tmp/dkai-rancher-binpath
         rm -rf /tmp/rancher-cli.tgz /tmp/rancher-extract
       fi
     fi
