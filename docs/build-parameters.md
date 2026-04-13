@@ -24,5 +24,5 @@ Topics covered include:
 |-----------|----------------------------------------------------------------------------|
 | DKAI DevPod (`dkai-dev`) | CPU (2/4 cores), Memory (4/8 GB), Home disk size (50–100 GB, monotonic ↑). Cursor IDE only (no subdomain). |
 | DKAI Arch (`dkai-arch`) | Same parameters as **DKAI DevPod** (`dkai-dev`). Arch Linux base image; Cursor IDE only (no subdomain). |
-| DKAI Agent (`dkai-agent`) | Same as DKAI Arch, plus **cursor_worker_idle_timeout** (30–86400 s, default 600) for `agent worker start` (no `--pool`) via `start-cursor-worker`, and optional **cursor_api_key** (masked string; individual account API key; sets `CURSOR_API_KEY` via `coder_env` when non-empty). |
+| DKAI Agent (`dkai-agent`) | Same CPU/memory/home disk as DKAI Arch, plus **cli_config_disk_size** (1–50 GiB, default 5, monotonic ↑) for a second PVC at `/mnt/coder-cli-config` (kubectl/gh/glab/rancher configs via symlinks); **cursor_worker_idle_timeout** (30–86400 s, default 600) for `start-cursor-worker`; optional **cursor_api_key** (masked; sets `CURSOR_API_KEY`). |
 | kubernetes| See [templates/kubernetes/README.md](../templates/kubernetes/README.md)   |

@@ -82,6 +82,21 @@ data "coder_parameter" "home_disk_size" {
   }
 }
 
+data "coder_parameter" "cli_config_disk_size" {
+  name         = "cli_config_disk_size"
+  display_name = "CLI config disk (kubectl, gh, glab, rancher)"
+  description  = "Second persistent volume (NFS) for CLI credentials and configs. Symlinked: ~/.kube, ~/.config/gh, ~/.config/glab, ~/.rancher. Size in GB (can only be increased after creation)."
+  default      = "5"
+  type         = "number"
+  icon         = "/emojis/1f4be.png"
+  mutable      = true
+  validation {
+    min       = 1
+    max       = 50
+    monotonic = "increasing"
+  }
+}
+
 data "coder_parameter" "cursor_worker_idle_timeout" {
   name         = "cursor_worker_idle_timeout"
   display_name = "Cursor worker idle release (seconds)"
@@ -193,6 +208,27 @@ resource "coder_agent" "main" {
         rm -rf /tmp/bin /tmp/glab.tgz
       fi
     fi
+    # kubectl (Kubernetes official release binary; install once, upgrade by deleting /usr/local/bin/kubectl)
+    if ! command -v kubectl >/dev/null 2>&1; then
+      KUBECTL_VER=$$(curl -fsSL https://dl.k8s.io/release/stable.txt 2>/dev/null | tr -d '\r\n' || echo "v1.32.0")
+      curl -fsSL "https://dl.k8s.io/release/$${KUBECTL_VER}/bin/linux/amd64/kubectl" -o /tmp/kubectl.bin
+      install -m 0755 /tmp/kubectl.bin /usr/local/bin/kubectl
+      rm -f /tmp/kubectl.bin
+    fi
+    # Rancher CLI (latest linux-amd64 .tar.gz from GitHub releases)
+    if ! command -v rancher >/dev/null 2>&1; then
+      python3 -c "import json,urllib.request;r=json.load(urllib.request.urlopen('https://api.github.com/repos/rancher/cli/releases/latest'));a=[x for x in r['assets'] if 'linux-amd64' in x['name'] and x['name'].endswith('.tar.gz')];print(a[0]['browser_download_url'] if a else '')" > /tmp/dkai-rancher-url 2>/dev/null || true
+      read -r RANCHER_DL < /tmp/dkai-rancher-url || true
+      if [ -n "$$RANCHER_DL" ] && curl -fsSL "$$RANCHER_DL" -o /tmp/rancher-cli.tgz; then
+        mkdir -p /tmp/rancher-extract
+        tar -xzf /tmp/rancher-cli.tgz -C /tmp/rancher-extract
+        RBIN=$$(find /tmp/rancher-extract -name rancher -type f 2>/dev/null | head -n1)
+        if [ -n "$$RBIN" ]; then
+          install -m 0755 "$$RBIN" /usr/local/bin/rancher
+        fi
+        rm -rf /tmp/rancher-cli.tgz /tmp/rancher-extract
+      fi
+    fi
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -203,6 +239,31 @@ resource "coder_agent" "main" {
     fi
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
+    # Second PVC (/mnt/coder-cli-config): persist kube + gh + glab + rancher configs (symlinks from ~).
+    mkdir -p /mnt/coder-cli-config/kube /mnt/coder-cli-config/config/gh /mnt/coder-cli-config/config/glab /mnt/coder-cli-config/rancher
+    chown -R coder:coder /mnt/coder-cli-config 2>/dev/null || true
+    mkdir -p /home/coder/.config
+    if [ -d /home/coder/.kube ] && [ ! -L /home/coder/.kube ]; then
+      cp -a /home/coder/.kube/. /mnt/coder-cli-config/kube/ 2>/dev/null || true
+      rm -rf /home/coder/.kube
+    fi
+    ln -sfn /mnt/coder-cli-config/kube /home/coder/.kube
+    if [ -d /home/coder/.config/gh ] && [ ! -L /home/coder/.config/gh ]; then
+      cp -a /home/coder/.config/gh/. /mnt/coder-cli-config/config/gh/ 2>/dev/null || true
+      rm -rf /home/coder/.config/gh
+    fi
+    ln -sfn /mnt/coder-cli-config/config/gh /home/coder/.config/gh
+    if [ -d /home/coder/.config/glab ] && [ ! -L /home/coder/.config/glab ]; then
+      cp -a /home/coder/.config/glab/. /mnt/coder-cli-config/config/glab/ 2>/dev/null || true
+      rm -rf /home/coder/.config/glab
+    fi
+    ln -sfn /mnt/coder-cli-config/config/glab /home/coder/.config/glab
+    if [ -d /home/coder/.rancher ] && [ ! -L /home/coder/.rancher ]; then
+      cp -a /home/coder/.rancher/. /mnt/coder-cli-config/rancher/ 2>/dev/null || true
+      rm -rf /home/coder/.rancher
+    fi
+    ln -sfn /mnt/coder-cli-config/rancher /home/coder/.rancher
+    chown -R coder:coder /mnt/coder-cli-config /home/coder/.kube /home/coder/.config /home/coder/.rancher 2>/dev/null || true
     # Default repo for Cloud Agent worker: clone under /home/coder/<repo-name> (not under ~/git).
     mkdir -p /home/coder
     chown coder:coder /home/coder 2>/dev/null || true
@@ -312,6 +373,8 @@ WORKERHELPER
     echo "CLI tools"
     if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo "  gh: not found"; fi
     if command -v glab >/dev/null 2>&1; then glab version 2>/dev/null | head -n1; else echo "  glab: not found"; fi
+    if command -v kubectl >/dev/null 2>&1; then kubectl version --client=true 2>/dev/null | head -n1 || echo "  kubectl: installed"; else echo "  kubectl: not found"; fi
+    if command -v rancher >/dev/null 2>&1; then rancher --version 2>/dev/null | head -n1 || echo "  rancher: installed"; else echo "  rancher: not found"; fi
     if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo "  coder: not found"; fi
     if command -v agent >/dev/null 2>&1; then
       echo -n "  cursor (agent): "
@@ -319,6 +382,8 @@ WORKERHELPER
     else
       echo "  cursor (agent): not installed"
     fi
+    echo ""
+    echo "CLI configs persist on second PVC: /mnt/coder-cli-config (symlinks: ~/.kube ~/.config/gh ~/.config/glab ~/.rancher)"
     echo ""
     echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
     echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"
@@ -464,10 +529,41 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
   }
 }
 
+resource "kubernetes_persistent_volume_claim_v1" "cli_config" {
+  metadata {
+    name      = "coder-${data.coder_workspace.me.id}-cli-config"
+    namespace = var.namespace
+    labels = {
+      "app.kubernetes.io/name"     = "coder-pvc-cli-config"
+      "app.kubernetes.io/instance" = "coder-pvc-cli-${data.coder_workspace.me.id}"
+      "app.kubernetes.io/part-of"  = "coder"
+      "com.coder.resource"         = "true"
+      "com.coder.workspace.id"     = data.coder_workspace.me.id
+      "com.coder.workspace.name"   = data.coder_workspace.me.name
+      "com.coder.user.id"          = data.coder_workspace_owner.me.id
+      "com.coder.user.username"    = data.coder_workspace_owner.me.name
+    }
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
+    }
+  }
+  wait_until_bound = false
+  spec {
+    access_modes       = ["ReadWriteOnce"]
+    storage_class_name = "truenas-csi-nfs"
+    resources {
+      requests = {
+        storage = "${data.coder_parameter.cli_config_disk_size.value}Gi"
+      }
+    }
+  }
+}
+
 resource "kubernetes_deployment_v1" "main" {
   count = data.coder_workspace.me.start_count
   depends_on = [
-    kubernetes_persistent_volume_claim_v1.home
+    kubernetes_persistent_volume_claim_v1.home,
+    kubernetes_persistent_volume_claim_v1.cli_config,
   ]
   wait_for_rollout = false
   metadata {
@@ -554,12 +650,24 @@ resource "kubernetes_deployment_v1" "main" {
             name       = "home"
             read_only  = false
           }
+          volume_mount {
+            mount_path = "/mnt/coder-cli-config"
+            name       = "cli-config"
+            read_only  = false
+          }
         }
 
         volume {
           name = "home"
           persistent_volume_claim {
             claim_name = kubernetes_persistent_volume_claim_v1.home.metadata.0.name
+            read_only  = false
+          }
+        }
+        volume {
+          name = "cli-config"
+          persistent_volume_claim {
+            claim_name = kubernetes_persistent_volume_claim_v1.cli_config.metadata.0.name
             read_only  = false
           }
         }

@@ -14,6 +14,8 @@ Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, AppArmor sand
 ## What you get
 
 - **`agent` CLI** installed under `/home/coder/.local/bin` (and on `PATH`), same as DKAI Arch.
+- **`kubectl`** and **`rancher`** CLIs installed to `/usr/local/bin` on first boot (pinned by presence of the binary; delete the binary to force a reinstall on next start).
+- **Second PVC** (`cli_config_disk_size`, default 5 GiB): mounted at **`/mnt/coder-cli-config`**. Startup symlinks **`~/.kube`**, **`~/.config/gh`**, **`~/.config/glab`**, and **`~/.rancher`** into that volume so credentials survive restarts independently of the home disk. Existing directories under home are copied into the volume once, then replaced by symlinks.
 - **Workspace parameter `cursor_api_key`** (optional, masked in the UI): when set, Coder injects **`CURSOR_API_KEY`** into the workspace via `coder_env`. Use the API key from **Cursor Dashboard → Settings → Cursor Settings → API Keys** for the user who owns usage. Leave empty and export it yourself if you prefer not to store the key on the workspace.
 - **`start-cursor-worker`** in `~/bin` and `/usr/local/bin`: runs `agent worker start` (without `--pool`) with your workspace’s **idle-release timeout** (build parameter `cursor_worker_idle_timeout`, default 600 seconds). Honors:
   - **`CURSOR_API_KEY`** — from the parameter above, or a manual `export`.
@@ -41,7 +43,7 @@ The idle timeout is **`cursor_worker_idle_timeout`** (seconds).
 
 ## Relationship to DKAI Arch
 
-Same Kubernetes layout (Deployment + PVC, `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds worker parameters, `coder_env` + end-of-startup autostart when **`cursor_api_key`** is set, `start-cursor-worker`, and related docs.
+Same Kubernetes layout (Deployment + **two** PVCs on `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, `kubectl`, `rancher`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds worker parameters, `coder_env` + end-of-startup autostart when **`cursor_api_key`** is set, `start-cursor-worker`, and related docs.
 
 ## Prerequisites
 
