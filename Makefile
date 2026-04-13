@@ -22,6 +22,8 @@ export TF_PLUGIN_CACHE_DIR
 
 # Coder CLI: push from repo root with --directory templates/<name> (not cwd=. or upload has no .tf files)
 CODER_ORGANIZATION ?= coder
+# Kubernetes namespace for templates that define var.namespace (must match templates/<name>/terraform.tfvars)
+K8S_NAMESPACE ?= coder-workspaces
 
 .PHONY: test test-all fmt-check init validate clean fmt debug check-dkai-startup template-push push-dkai-agent
 
@@ -85,7 +87,7 @@ template-push:
 		--directory "$(CURDIR)/templates/$(TEMPLATE)" \
 		--yes \
 		--ignore-lockfile \
-		--variables-file "$(CURDIR)/templates/$(TEMPLATE)/terraform.tfvars" \
+		--variable namespace="$(K8S_NAMESPACE)" \
 		--variable use_kubeconfig=false \
 		-O "$(CODER_ORGANIZATION)" \
 		-m "$(if $(MSG),$(MSG),$(TEMPLATE): template push)"
