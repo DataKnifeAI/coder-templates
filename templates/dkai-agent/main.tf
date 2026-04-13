@@ -281,6 +281,11 @@ resource "coder_agent" "main" {
         git -C "/home/coder/$${WORKER_REPO_NAME}" remote add origin "$${WORKER_GIT_URL}" 2>/dev/null || \
           git -C "/home/coder/$${WORKER_REPO_NAME}" remote set-url origin "$${WORKER_GIT_URL}"
       fi
+      if [ -d "/home/coder/$${WORKER_REPO_NAME}/.git" ]; then
+        git -C "/home/coder/$${WORKER_REPO_NAME}" remote set-url origin "$${WORKER_GIT_URL}" 2>/dev/null || true
+        git -C "/home/coder/$${WORKER_REPO_NAME}" pull --ff-only 2>/dev/null || \
+          git -C "/home/coder/$${WORKER_REPO_NAME}" pull 2>/dev/null || true
+      fi
       chown -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
     fi
     # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
