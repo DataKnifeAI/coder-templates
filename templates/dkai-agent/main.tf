@@ -396,7 +396,7 @@ WORKERHELPER
     echo "  Set CURSOR_API_KEY via workspace parameter cursor_api_key, or: export CURSOR_API_KEY=\"<key>\""
     echo "  Optional: export CURSOR_WORKER_LABELS_FILE=/home/coder/.cursor-worker-labels.json"
     echo "  Optional: export CURSOR_WORKER_MANAGEMENT_ADDR=:8080   # /metrics /healthz /readyz"
-    echo "  Worker: auto-starts below when cursor_api_key is set; /tmp/cursor-worker.log contents follow"
+    echo "  Worker: auto-starts below when cursor_api_key is set; log dumped after worker prints links (wait up to ~30s)"
     echo "  Or run manually: start-cursor-worker"
     echo "  (idle-release-timeout defaults from workspace parameter cursor_worker_idle_timeout)"
     echo ""
@@ -423,7 +423,15 @@ WORKERHELPER
       fi
       nohup /home/coder/bin/start-cursor-worker >>/tmp/cursor-worker.log 2>&1 & echo $$! >/tmp/cursor-worker.pid
       echo "cursor_worker: started in background (log: /tmp/cursor-worker.log, pid: /tmp/cursor-worker.pid)"
-      sleep 2
+      # Wait until log has Cursor links (or cap ~30s) — 2s was too short for TLS/handshake.
+      w=0
+      while [ "$$w" -lt 30 ]; do
+        if [ -s /tmp/cursor-worker.log ] && grep -qE "Worker is now running|cursor\\.com/agents" /tmp/cursor-worker.log 2>/dev/null; then
+          break
+        fi
+        sleep 1
+        w=$$((w+1))
+      done
       if [ -f /tmp/cursor-worker.log ]; then
         echo ""
         cat /tmp/cursor-worker.log
