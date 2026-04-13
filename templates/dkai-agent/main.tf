@@ -36,7 +36,7 @@ variable "namespace" {
 data "coder_parameter" "cpu" {
   name         = "cpu"
   display_name = "CPU"
-  description  = "The number of CPU cores"
+  description  = "CPU limit for the workspace pod (Kubernetes limits.cpu; 2 or 4 cores)."
   default      = "2"
   icon         = "/icon/memory.svg"
   mutable      = true
@@ -53,7 +53,7 @@ data "coder_parameter" "cpu" {
 data "coder_parameter" "memory" {
   name         = "memory"
   display_name = "Memory"
-  description  = "The amount of memory in GB"
+  description  = "Memory limit for the workspace pod in GiB (Kubernetes limits.memory as 4Gi or 8Gi)."
   default      = "4"
   icon         = "/icon/memory.svg"
   mutable      = true
@@ -70,7 +70,7 @@ data "coder_parameter" "memory" {
 data "coder_parameter" "home_disk_size" {
   name         = "home_disk_size"
   display_name = "Home disk size"
-  description  = "The size of the home disk in GB (can only be increased after creation)"
+  description  = "Size of the home PVC for /home/coder in GiB (Kubernetes storage request N Gi). Range 50–100 GiB; can only be increased after creation."
   default      = "50"
   type         = "number"
   icon         = "/emojis/1f4be.png"
@@ -86,13 +86,14 @@ data "coder_parameter" "tool_config_volume_mode" {
   name         = "tool_config_volume_mode"
   display_name = "Tool config storage"
   description  = <<-EOF
-  Dedicated (default): the template creates a second PVC per workspace — no cluster prep. Shared pool: one ReadWriteMany PVC must exist in the namespace (see tool_shared_pvc_name); each Coder user gets a subpath (sanitized login) so all dkai-agent workspaces for that user share tool config. Auto-creating that PVC via Terraform kubernetes_manifest is not used here: the Coder provisioner SA typically cannot list apiextensions.k8s.io/customresourcedefinitions, which the kubernetes provider requires for kubernetes_manifest on this cluster.
+  Dedicated (default): second PVC per workspace at /mnt/coder-tool-config (ReadWriteOnce; name coder-<workspace-id>-tool-config).
+  Shared pool: one ReadWriteMany PVC per Coder workspace owner at /mnt/coder-tool-config (name coder-<owner-id>-tool-config), sized by tool_config_disk_size — no cluster-admin PVC and no subpaths. Prefer at most one dkai-agent shared_pool workspace per owner; a second can fail with PVC AlreadyExists unless that claim is imported into the new workspace Terraform state.
   EOF
   default      = "dedicated"
   icon         = "/emojis/1f4be.png"
   mutable      = true
   option {
-    name  = "Shared pool (per user, all dkai-agent workspaces)"
+    name  = "Shared pool (one RWX PVC per Coder user)"
     value = "shared_pool"
   }
   option {
@@ -101,21 +102,10 @@ data "coder_parameter" "tool_config_volume_mode" {
   }
 }
 
-data "coder_parameter" "tool_shared_pvc_name" {
-  name         = "tool_shared_pvc_name"
-  display_name = "Shared tool PVC name"
-  description  = "Used when tool config storage is Shared pool. Cluster admin creates one ReadWriteMany PVC in the workspace namespace with this name. All users mount it; data is isolated per Coder login (subpath user-<sanitized-username>)."
-  default      = "coder-dkai-agent-tool-shared"
-  type         = "string"
-  form_type    = "input"
-  icon         = "/emojis/1f4be.png"
-  mutable      = true
-}
-
 data "coder_parameter" "tool_config_disk_size" {
   name         = "tool_config_disk_size"
   display_name = "Tool config disk (kube, gh, glab, rancher)"
-  description  = "Used only when tool config storage is Dedicated: second PVC size in GiB (monotonic increase). With Shared pool, size is set on the shared PVC by the admin — this value is ignored."
+  description  = "Size in GiB of the tool-config PVC mounted at /mnt/coder-tool-config (default 5 GiB; range 1–50 GiB; monotonic increase). Dedicated: one such PVC per workspace. Shared pool: one PVC per Coder owner (same volume for all that owner’s dkai-agent workspaces)."
   default      = "5"
   type         = "number"
   icon         = "/emojis/1f4be.png"
@@ -130,7 +120,7 @@ data "coder_parameter" "tool_config_disk_size" {
 data "coder_parameter" "cursor_worker_idle_timeout" {
   name         = "cursor_worker_idle_timeout"
   display_name = "Cursor worker idle release (seconds)"
-  description  = "After a Cloud Agent session ends, keep the worker connected this many seconds for follow-ups (see `agent worker start --help`). Used by ~/bin/start-cursor-worker (not team pool mode)."
+  description  = "Value passed to agent worker start --idle-release-timeout in /home/coder/bin/start-cursor-worker (seconds). See agent worker start --help. Not used for team pool mode."
   default      = "600"
   type         = "number"
   icon         = "/emojis/1f916.png"
@@ -144,7 +134,7 @@ data "coder_parameter" "cursor_worker_idle_timeout" {
 data "coder_parameter" "cursor_worker_git_url" {
   name         = "cursor_worker_git_url"
   display_name = "Cursor worker Git repo (HTTPS)"
-  description  = "HTTPS URL cloned with: cd /home/coder && git clone <url> (repo appears as /home/coder/<name>, e.g. agent-workspace). Set empty to skip auto-clone."
+  description  = "HTTPS URL for the Cursor worker checkout: cloned or updated under /home/coder/<repo>/ at startup (repo name = basename of the URL without .git). Clear to skip clone/pull and use /home/coder only."
   type         = "string"
   form_type    = "input"
   default      = "https://github.com/DataKnifeAI/agent-workspace.git"
@@ -155,7 +145,7 @@ data "coder_parameter" "cursor_worker_git_url" {
 data "coder_parameter" "cursor_api_key" {
   name         = "cursor_api_key"
   display_name = "Cursor API key"
-  description  = "Optional. Your individual Cursor API key — sets CURSOR_API_KEY (coder_env) and auto-starts `agent worker start` (without --pool) when set. Create under Cursor Dashboard → Settings → Cursor Settings → API Keys. Usage is billed to your account; not team pool / service-account workers. Leave empty to export manually. Stored on the workspace; prefer org secret stores for production."
+  description  = "Optional. Your Cursor API key (Dashboard → Cursor Settings → API Keys). When set, Coder injects CURSOR_API_KEY via coder_env and the startup script auto-starts agent worker start (individual key, not --pool). Clear to set the key only inside the workspace. Usage bills to your Cursor account; treat like any workspace secret."
   type         = "string"
   form_type    = "input"
   default      = ""
@@ -175,38 +165,8 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 locals {
-  # One directory per Coder login on the shared RWX pool (sanitized username). All dkai-agent
-  # workspaces for that owner mount the same subpath. Prefer username over id so the share is
-  # browsable; if the account username changes in Coder, this path changes (move data on the NFS
-  # share if needed). Empty/unusual names fall back to owner id.
-  tool_config_owner_raw = lower(trimspace(coalesce(data.coder_workspace_owner.me.name, "")))
-  tool_config_owner_slug = replace(
-    replace(
-      replace(
-        replace(
-          replace(local.tool_config_owner_raw, "/", "-"),
-          "\\", "-",
-        ),
-        " ", "-",
-      ),
-      "..", "-",
-    ),
-    "@", "-at-",
-  )
-  tool_config_subpath = "user-${local.tool_config_owner_slug != "" ? local.tool_config_owner_slug : data.coder_workspace_owner.me.id}"
-}
-
-# Shared RWX pool: referenced by data source (admin-created PVC). kubernetes_manifest was not used: the
-# kubernetes provider requires listing CRDs for GVK lookup, but the Coder provisioner ServiceAccount is often
-# forbidden to list apiextensions.k8s.io/customresourcedefinitions, so template import/plan fails. A normal
-# kubernetes_persistent_volume_claim resource would error with AlreadyExists on the second workspace's state.
-
-data "kubernetes_persistent_volume_claim_v1" "tool_shared" {
-  count = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? 1 : 0
-  metadata {
-    name      = data.coder_parameter.tool_shared_pvc_name.value
-    namespace = var.namespace
-  }
+  # Shared pool: one PVC per Coder user (not per workspace). Name is stable for a given owner id.
+  tool_config_user_pvc_name = "coder-${data.coder_workspace_owner.me.id}-tool-config"
 }
 
 resource "coder_agent" "main" {
@@ -635,6 +595,35 @@ resource "kubernetes_persistent_volume_claim_v1" "tool_config" {
   }
 }
 
+resource "kubernetes_persistent_volume_claim_v1" "tool_shared_user" {
+  count = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? 1 : 0
+  metadata {
+    name      = local.tool_config_user_pvc_name
+    namespace = var.namespace
+    labels = {
+      "app.kubernetes.io/name"     = "coder-pvc-tool-config-user"
+      "app.kubernetes.io/instance" = "coder-pvc-tool-user-${data.coder_workspace_owner.me.id}"
+      "app.kubernetes.io/part-of"  = "coder"
+      "com.coder.resource"         = "true"
+      "com.coder.user.id"          = data.coder_workspace_owner.me.id
+      "com.coder.user.username"    = data.coder_workspace_owner.me.name
+    }
+    annotations = {
+      "com.coder.user.email" = data.coder_workspace_owner.me.email
+    }
+  }
+  wait_until_bound = false
+  spec {
+    access_modes       = ["ReadWriteMany"]
+    storage_class_name = "truenas-csi-nfs"
+    resources {
+      requests = {
+        storage = "${data.coder_parameter.tool_config_disk_size.value}Gi"
+      }
+    }
+  }
+}
+
 resource "kubernetes_deployment_v1" "main" {
   count = data.coder_workspace.me.start_count
   depends_on = [
@@ -698,27 +687,6 @@ resource "kubernetes_deployment_v1" "main" {
           run_as_non_root = false
         }
 
-        dynamic "init_container" {
-          for_each = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? [1] : []
-          content {
-            name              = "tool-config-subpath-init"
-            image             = "docker.io/busybox:1.36"
-            image_pull_policy = "IfNotPresent"
-            command = [
-              "sh", "-c",
-              "mkdir -p \"/pool/${local.tool_config_subpath}\"",
-            ]
-            security_context {
-              run_as_user = "0"
-            }
-            volume_mount {
-              mount_path = "/pool"
-              name       = "tool-config"
-              read_only  = false
-            }
-          }
-        }
-
         container {
           name              = "dev"
           image             = "docker.io/archlinux:latest"
@@ -750,7 +718,6 @@ resource "kubernetes_deployment_v1" "main" {
             mount_path = "/mnt/coder-tool-config"
             name       = "tool-config"
             read_only  = false
-            sub_path   = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? local.tool_config_subpath : null
           }
         }
 
@@ -766,7 +733,7 @@ resource "kubernetes_deployment_v1" "main" {
           persistent_volume_claim {
             claim_name = (
               data.coder_parameter.tool_config_volume_mode.value == "shared_pool"
-              ? data.kubernetes_persistent_volume_claim_v1.tool_shared[0].metadata[0].name
+              ? kubernetes_persistent_volume_claim_v1.tool_shared_user[0].metadata[0].name
               : kubernetes_persistent_volume_claim_v1.tool_config[0].metadata[0].name
             )
             read_only = false
