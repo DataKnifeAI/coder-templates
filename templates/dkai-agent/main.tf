@@ -326,7 +326,7 @@ WORKERHELPER
     echo "  Set CURSOR_API_KEY via workspace parameter cursor_api_key, or: export CURSOR_API_KEY=\"<key>\""
     echo "  Optional: export CURSOR_WORKER_LABELS_FILE=/home/coder/.cursor-worker-labels.json"
     echo "  Optional: export CURSOR_WORKER_MANAGEMENT_ADDR=:8080   # /metrics /healthz /readyz"
-    echo "  Worker: auto-starts below when cursor_api_key is set (logs: /tmp/cursor-worker.log)"
+    echo "  Worker: auto-starts below when cursor_api_key is set; startup prints cat /tmp/cursor-worker.log (Cursor links)"
     echo "  Or run manually: start-cursor-worker"
     echo "  (idle-release-timeout defaults from workspace parameter cursor_worker_idle_timeout)"
     echo ""
@@ -353,6 +353,13 @@ WORKERHELPER
       fi
       nohup /home/coder/bin/start-cursor-worker >>/tmp/cursor-worker.log 2>&1 & echo $$! >/tmp/cursor-worker.pid
       echo "cursor_worker: started in background (log: /tmp/cursor-worker.log, pid: /tmp/cursor-worker.pid)"
+      sleep 2
+      if [ -f /tmp/cursor-worker.log ]; then
+        echo ""
+        echo "=== /tmp/cursor-worker.log (direct links to this worker in Cursor) ==="
+        cat /tmp/cursor-worker.log
+        echo "=== end /tmp/cursor-worker.log ==="
+      fi
     elif [ -z "$${CURSOR_API_KEY:-}" ]; then
       echo "cursor_worker: CURSOR_API_KEY not set; set workspace parameter cursor_api_key to auto-start worker"
     else
