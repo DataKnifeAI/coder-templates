@@ -82,10 +82,40 @@ data "coder_parameter" "home_disk_size" {
   }
 }
 
+data "coder_parameter" "tool_config_volume_mode" {
+  name         = "tool_config_volume_mode"
+  display_name = "Tool config storage"
+  description  = <<-EOF
+  Dedicated (default): the template creates a second PVC per workspace — no cluster prep. Shared pool: one ReadWriteMany PVC must exist in the namespace (see tool_shared_pvc_name); each Coder user gets a subpath (sanitized login) so all dkai-agent workspaces for that user share tool config. Auto-creating that PVC via Terraform kubernetes_manifest is not used here: the Coder provisioner SA typically cannot list apiextensions.k8s.io/customresourcedefinitions, which the kubernetes provider requires for kubernetes_manifest on this cluster.
+  EOF
+  default      = "dedicated"
+  icon         = "/emojis/1f4be.png"
+  mutable      = true
+  option {
+    name  = "Shared pool (per user, all dkai-agent workspaces)"
+    value = "shared_pool"
+  }
+  option {
+    name  = "Dedicated PVC per workspace (legacy)"
+    value = "dedicated"
+  }
+}
+
+data "coder_parameter" "tool_shared_pvc_name" {
+  name         = "tool_shared_pvc_name"
+  display_name = "Shared tool PVC name"
+  description  = "Used when tool config storage is Shared pool. Cluster admin creates one ReadWriteMany PVC in the workspace namespace with this name. All users mount it; data is isolated per Coder login (subpath user-<sanitized-username>)."
+  default      = "coder-dkai-agent-tool-shared"
+  type         = "string"
+  form_type    = "input"
+  icon         = "/emojis/1f4be.png"
+  mutable      = true
+}
+
 data "coder_parameter" "tool_config_disk_size" {
   name         = "tool_config_disk_size"
   display_name = "Tool config disk (kube, gh, glab, rancher)"
-  description  = "Second persistent volume (NFS) for tool credentials and configs. Symlinked: ~/.kube, ~/.config/gh, ~/.config/glab, ~/.rancher. Size in GB (can only be increased after creation)."
+  description  = "Used only when tool config storage is Dedicated: second PVC size in GiB (monotonic increase). With Shared pool, size is set on the shared PVC by the admin — this value is ignored."
   default      = "5"
   type         = "number"
   icon         = "/emojis/1f4be.png"
@@ -144,6 +174,41 @@ provider "kubernetes" {
 data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
+locals {
+  # One directory per Coder login on the shared RWX pool (sanitized username). All dkai-agent
+  # workspaces for that owner mount the same subpath. Prefer username over id so the share is
+  # browsable; if the account username changes in Coder, this path changes (move data on the NFS
+  # share if needed). Empty/unusual names fall back to owner id.
+  tool_config_owner_raw = lower(trimspace(coalesce(data.coder_workspace_owner.me.name, "")))
+  tool_config_owner_slug = replace(
+    replace(
+      replace(
+        replace(
+          replace(local.tool_config_owner_raw, "/", "-"),
+          "\\", "-",
+        ),
+        " ", "-",
+      ),
+      "..", "-",
+    ),
+    "@", "-at-",
+  )
+  tool_config_subpath = "user-${local.tool_config_owner_slug != "" ? local.tool_config_owner_slug : data.coder_workspace_owner.me.id}"
+}
+
+# Shared RWX pool: referenced by data source (admin-created PVC). kubernetes_manifest was not used: the
+# kubernetes provider requires listing CRDs for GVK lookup, but the Coder provisioner ServiceAccount is often
+# forbidden to list apiextensions.k8s.io/customresourcedefinitions, so template import/plan fails. A normal
+# kubernetes_persistent_volume_claim resource would error with AlreadyExists on the second workspace's state.
+
+data "kubernetes_persistent_volume_claim_v1" "tool_shared" {
+  count = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? 1 : 0
+  metadata {
+    name      = data.coder_parameter.tool_shared_pvc_name.value
+    namespace = var.namespace
+  }
+}
+
 resource "coder_agent" "main" {
   os   = "linux"
   arch = "amd64"
@@ -174,19 +239,19 @@ resource "coder_agent" "main" {
     # Trim GitHub release tag with sed; avoid bash prefix-strip here; Terraform treats dollar-brace as template syntax in this block.
     # Avoid apostrophe in curl -w; avoid command-substitution open-paren on one line if the agent strips dollar signs.
     CFMT=%%{url_effective}
-    curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w "$$CFMT" https://github.com/cli/cli/releases/latest 2>/dev/null > /tmp/dkai-gh-url || true
+    curl -fsSIL -A "Mozilla/5.0" -o /dev/null -w "$${CFMT}" https://github.com/cli/cli/releases/latest 2>/dev/null > /tmp/dkai-gh-url || true
     read -r GH_URL < /tmp/dkai-gh-url || true
     GH_TAG=$${GH_URL##*/}
-    T="$$GH_TAG" python3 -c "import os; print(os.environ.get(\"T\",\"\").removeprefix(\"v\"))" 2>/dev/null > /tmp/dkai-gh-ver || true
+    T="$${GH_TAG}" python3 -c "import os; print(os.environ.get(\"T\",\"\").removeprefix(\"v\"))" 2>/dev/null > /tmp/dkai-gh-ver || true
     read -r GH_VERSION < /tmp/dkai-gh-ver || true
-    [ -n "$$GH_VERSION" ] || GH_VERSION=2.89.0
-    printf "%s" "$$GH_VERSION" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || GH_VERSION=2.89.0
+    [ -n "$${GH_VERSION}" ] || GH_VERSION=2.89.0
+    printf "%s" "$${GH_VERSION}" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || GH_VERSION=2.89.0
     GH_CUR=
     if command -v gh >/dev/null 2>&1; then
       gh version 2>/dev/null | head -n1 | sed -E "s/^gh version ([0-9.]+).*/\\1/" > /tmp/dkai-gh-cur || true
       read -r GH_CUR < /tmp/dkai-gh-cur || true
     fi
-    if [ "$$GH_CUR" != "$$GH_VERSION" ]; then
+    if [ "$${GH_CUR}" != "$${GH_VERSION}" ]; then
       if curl -fsSL "https://github.com/cli/cli/releases/download/v$${GH_VERSION}/gh_$${GH_VERSION}_linux_amd64.tar.gz" -o /tmp/gh.tgz; then
         tar -xzf /tmp/gh.tgz -C /tmp
         install -m 0755 "/tmp/gh_$${GH_VERSION}_linux_amd64/bin/gh" /usr/local/bin/gh
@@ -196,14 +261,14 @@ resource "coder_agent" "main" {
     curl -fsSL "https://gitlab.com/api/v4/projects/gitlab-org%2Fcli/releases/permalink/latest" -o /tmp/dkai-glab-json 2>/dev/null || true
     python3 -c "import sys,json; t=json.load(sys.stdin)[\"tag_name\"]; print(t.removeprefix(\"v\"))" < /tmp/dkai-glab-json > /tmp/dkai-glab-ver 2>/dev/null || true
     read -r GLAB_VERSION < /tmp/dkai-glab-ver || true
-    [ -n "$$GLAB_VERSION" ] || GLAB_VERSION=1.92.0
-    printf "%s" "$$GLAB_VERSION" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || GLAB_VERSION=1.92.0
+    [ -n "$${GLAB_VERSION}" ] || GLAB_VERSION=1.92.0
+    printf "%s" "$${GLAB_VERSION}" | grep -qE '^[0-9]+\\.[0-9]+\\.[0-9]+$$' || GLAB_VERSION=1.92.0
     GLAB_CUR=
     if command -v glab >/dev/null 2>&1; then
       glab version 2>/dev/null | head -n1 | sed -E "s/.*([0-9]+\\.[0-9]+\\.[0-9]+).*/\\1/" > /tmp/dkai-glab-cur || true
       read -r GLAB_CUR < /tmp/dkai-glab-cur || true
     fi
-    if [ "$$GLAB_CUR" != "$$GLAB_VERSION" ]; then
+    if [ "$${GLAB_CUR}" != "$${GLAB_VERSION}" ]; then
       if curl -fsSL "https://gitlab.com/gitlab-org/cli/-/releases/v$${GLAB_VERSION}/downloads/glab_$${GLAB_VERSION}_linux_amd64.tar.gz" -o /tmp/glab.tgz; then
         tar -xzf /tmp/glab.tgz -C /tmp
         install -m 0755 /tmp/bin/glab /usr/local/bin/glab
@@ -215,13 +280,13 @@ resource "coder_agent" "main" {
     if ! command -v rancher >/dev/null 2>&1; then
       python3 -c "import json,urllib.request;r=json.load(urllib.request.urlopen('https://api.github.com/repos/rancher/cli/releases/latest'));a=[x for x in r['assets'] if 'linux-amd64' in x['name'] and x['name'].endswith('.tar.gz')];print(a[0]['browser_download_url'] if a else '')" > /tmp/dkai-rancher-url 2>/dev/null || true
       read -r RANCHER_DL < /tmp/dkai-rancher-url || true
-      if [ -n "$$RANCHER_DL" ] && curl -fsSL "$$RANCHER_DL" -o /tmp/rancher-cli.tgz; then
+      if [ -n "$${RANCHER_DL}" ] && curl -fsSL "$${RANCHER_DL}" -o /tmp/rancher-cli.tgz; then
         mkdir -p /tmp/rancher-extract
         tar -xzf /tmp/rancher-cli.tgz -C /tmp/rancher-extract
         find /tmp/rancher-extract -name rancher -type f 2>/dev/null | head -n1 > /tmp/dkai-rancher-binpath
         read -r RBIN < /tmp/dkai-rancher-binpath
-        if [ -n "$$RBIN" ]; then
-          install -m 0755 "$$RBIN" /usr/local/bin/rancher
+        if [ -n "$${RBIN}" ]; then
+          install -m 0755 "$${RBIN}" /usr/local/bin/rancher
         fi
         rm -f /tmp/dkai-rancher-binpath
         rm -rf /tmp/rancher-cli.tgz /tmp/rancher-extract
@@ -410,7 +475,7 @@ WORKERHELPER
     if [ -n "$${CURSOR_API_KEY:-}" ] && [ -x /home/coder/bin/start-cursor-worker ]; then
       if [ -f /tmp/cursor-worker.pid ]; then
         read -r oldpid < /tmp/cursor-worker.pid 2>/dev/null || oldpid=
-        [ -n "$$oldpid" ] && kill "$$oldpid" 2>/dev/null || true
+        [ -n "$${oldpid}" ] && kill "$${oldpid}" 2>/dev/null || true
         rm -f /tmp/cursor-worker.pid
       fi
       sleep 1
@@ -424,13 +489,12 @@ WORKERHELPER
       nohup /home/coder/bin/start-cursor-worker >>/tmp/cursor-worker.log 2>&1 & echo $$! >/tmp/cursor-worker.pid
       echo "cursor_worker: started in background (log: /tmp/cursor-worker.log, pid: /tmp/cursor-worker.pid)"
       # Wait until log has Cursor links (or cap ~30s) — 2s was too short for TLS/handshake.
-      w=0
-      while [ "$$w" -lt 30 ]; do
+      # Use brace expansion, not $(seq): some layers strip "$" from "$(..." and bash then sees "(seq..." → error near "(".
+      for _attempt in {1..30}; do
         if [ -s /tmp/cursor-worker.log ] && grep -qE "Worker is now running|cursor\\.com/agents" /tmp/cursor-worker.log 2>/dev/null; then
           break
         fi
         sleep 1
-        w=$$((w+1))
       done
       if [ -f /tmp/cursor-worker.log ]; then
         echo ""
@@ -541,6 +605,7 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "tool_config" {
+  count = data.coder_parameter.tool_config_volume_mode.value == "dedicated" ? 1 : 0
   metadata {
     name      = "coder-${data.coder_workspace.me.id}-tool-config"
     namespace = var.namespace
@@ -574,7 +639,6 @@ resource "kubernetes_deployment_v1" "main" {
   count = data.coder_workspace.me.start_count
   depends_on = [
     kubernetes_persistent_volume_claim_v1.home,
-    kubernetes_persistent_volume_claim_v1.tool_config,
   ]
   wait_for_rollout = false
   metadata {
@@ -634,6 +698,27 @@ resource "kubernetes_deployment_v1" "main" {
           run_as_non_root = false
         }
 
+        dynamic "init_container" {
+          for_each = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? [1] : []
+          content {
+            name              = "tool-config-subpath-init"
+            image             = "docker.io/busybox:1.36"
+            image_pull_policy = "IfNotPresent"
+            command = [
+              "sh", "-c",
+              "mkdir -p \"/pool/${local.tool_config_subpath}\"",
+            ]
+            security_context {
+              run_as_user = "0"
+            }
+            volume_mount {
+              mount_path = "/pool"
+              name       = "tool-config"
+              read_only  = false
+            }
+          }
+        }
+
         container {
           name              = "dev"
           image             = "docker.io/archlinux:latest"
@@ -665,6 +750,7 @@ resource "kubernetes_deployment_v1" "main" {
             mount_path = "/mnt/coder-tool-config"
             name       = "tool-config"
             read_only  = false
+            sub_path   = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? local.tool_config_subpath : null
           }
         }
 
@@ -678,8 +764,12 @@ resource "kubernetes_deployment_v1" "main" {
         volume {
           name = "tool-config"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.tool_config.metadata.0.name
-            read_only  = false
+            claim_name = (
+              data.coder_parameter.tool_config_volume_mode.value == "shared_pool"
+              ? data.kubernetes_persistent_volume_claim_v1.tool_shared[0].metadata[0].name
+              : kubernetes_persistent_volume_claim_v1.tool_config[0].metadata[0].name
+            )
+            read_only = false
           }
         }
 
