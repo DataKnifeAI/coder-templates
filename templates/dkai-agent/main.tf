@@ -82,10 +82,10 @@ data "coder_parameter" "home_disk_size" {
   }
 }
 
-data "coder_parameter" "cli_config_disk_size" {
-  name         = "cli_config_disk_size"
-  display_name = "CLI config disk (kubectl, gh, glab, rancher)"
-  description  = "Second persistent volume (NFS) for CLI credentials and configs. Symlinked: ~/.kube, ~/.config/gh, ~/.config/glab, ~/.rancher. Size in GB (can only be increased after creation)."
+data "coder_parameter" "tool_config_disk_size" {
+  name         = "tool_config_disk_size"
+  display_name = "Tool config disk (kube, gh, glab, rancher)"
+  description  = "Second persistent volume (NFS) for tool credentials and configs. Symlinked: ~/.kube, ~/.config/gh, ~/.config/glab, ~/.rancher. Size in GB (can only be increased after creation)."
   default      = "5"
   type         = "number"
   icon         = "/emojis/1f4be.png"
@@ -238,31 +238,31 @@ resource "coder_agent" "main" {
     fi
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     chown -R coder:coder /home/coder 2>/dev/null || true
-    # Second PVC (/mnt/coder-cli-config): persist kube + gh + glab + rancher configs (symlinks from ~).
-    mkdir -p /mnt/coder-cli-config/kube /mnt/coder-cli-config/config/gh /mnt/coder-cli-config/config/glab /mnt/coder-cli-config/rancher
-    chown -R coder:coder /mnt/coder-cli-config 2>/dev/null || true
+    # Second PVC (/mnt/coder-tool-config): persist kube + gh + glab + rancher (active symlinks from ~ below).
+    mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab /mnt/coder-tool-config/rancher
+    chown -R coder:coder /mnt/coder-tool-config 2>/dev/null || true
     mkdir -p /home/coder/.config
     if [ -d /home/coder/.kube ] && [ ! -L /home/coder/.kube ]; then
-      cp -a /home/coder/.kube/. /mnt/coder-cli-config/kube/ 2>/dev/null || true
+      cp -a /home/coder/.kube/. /mnt/coder-tool-config/kube/ 2>/dev/null || true
       rm -rf /home/coder/.kube
     fi
-    ln -sfn /mnt/coder-cli-config/kube /home/coder/.kube
+    ln -sfn /mnt/coder-tool-config/kube /home/coder/.kube
     if [ -d /home/coder/.config/gh ] && [ ! -L /home/coder/.config/gh ]; then
-      cp -a /home/coder/.config/gh/. /mnt/coder-cli-config/config/gh/ 2>/dev/null || true
+      cp -a /home/coder/.config/gh/. /mnt/coder-tool-config/config/gh/ 2>/dev/null || true
       rm -rf /home/coder/.config/gh
     fi
-    ln -sfn /mnt/coder-cli-config/config/gh /home/coder/.config/gh
+    ln -sfn /mnt/coder-tool-config/config/gh /home/coder/.config/gh
     if [ -d /home/coder/.config/glab ] && [ ! -L /home/coder/.config/glab ]; then
-      cp -a /home/coder/.config/glab/. /mnt/coder-cli-config/config/glab/ 2>/dev/null || true
+      cp -a /home/coder/.config/glab/. /mnt/coder-tool-config/config/glab/ 2>/dev/null || true
       rm -rf /home/coder/.config/glab
     fi
-    ln -sfn /mnt/coder-cli-config/config/glab /home/coder/.config/glab
+    ln -sfn /mnt/coder-tool-config/config/glab /home/coder/.config/glab
     if [ -d /home/coder/.rancher ] && [ ! -L /home/coder/.rancher ]; then
-      cp -a /home/coder/.rancher/. /mnt/coder-cli-config/rancher/ 2>/dev/null || true
+      cp -a /home/coder/.rancher/. /mnt/coder-tool-config/rancher/ 2>/dev/null || true
       rm -rf /home/coder/.rancher
     fi
-    ln -sfn /mnt/coder-cli-config/rancher /home/coder/.rancher
-    chown -R coder:coder /mnt/coder-cli-config /home/coder/.kube /home/coder/.config /home/coder/.rancher 2>/dev/null || true
+    ln -sfn /mnt/coder-tool-config/rancher /home/coder/.rancher
+    chown -R coder:coder /mnt/coder-tool-config /home/coder/.kube /home/coder/.config /home/coder/.rancher 2>/dev/null || true
     # Default repo for Cloud Agent worker: clone under /home/coder/<repo-name> (not under ~/git).
     mkdir -p /home/coder
     chown coder:coder /home/coder 2>/dev/null || true
@@ -388,7 +388,7 @@ WORKERHELPER
       echo "  cursor (agent): not installed"
     fi
     echo ""
-    echo "CLI configs persist on second PVC: /mnt/coder-cli-config (symlinks: ~/.kube ~/.config/gh ~/.config/glab ~/.rancher)"
+    echo "Tool configs on second PVC: /mnt/coder-tool-config → ~/.kube ~/.config/gh ~/.config/glab ~/.rancher (symlinks)"
     echo ""
     echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
     echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"
@@ -540,13 +540,13 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
   }
 }
 
-resource "kubernetes_persistent_volume_claim_v1" "cli_config" {
+resource "kubernetes_persistent_volume_claim_v1" "tool_config" {
   metadata {
-    name      = "coder-${data.coder_workspace.me.id}-cli-config"
+    name      = "coder-${data.coder_workspace.me.id}-tool-config"
     namespace = var.namespace
     labels = {
-      "app.kubernetes.io/name"     = "coder-pvc-cli-config"
-      "app.kubernetes.io/instance" = "coder-pvc-cli-${data.coder_workspace.me.id}"
+      "app.kubernetes.io/name"     = "coder-pvc-tool-config"
+      "app.kubernetes.io/instance" = "coder-pvc-tool-${data.coder_workspace.me.id}"
       "app.kubernetes.io/part-of"  = "coder"
       "com.coder.resource"         = "true"
       "com.coder.workspace.id"     = data.coder_workspace.me.id
@@ -564,7 +564,7 @@ resource "kubernetes_persistent_volume_claim_v1" "cli_config" {
     storage_class_name = "truenas-csi-nfs"
     resources {
       requests = {
-        storage = "${data.coder_parameter.cli_config_disk_size.value}Gi"
+        storage = "${data.coder_parameter.tool_config_disk_size.value}Gi"
       }
     }
   }
@@ -574,7 +574,7 @@ resource "kubernetes_deployment_v1" "main" {
   count = data.coder_workspace.me.start_count
   depends_on = [
     kubernetes_persistent_volume_claim_v1.home,
-    kubernetes_persistent_volume_claim_v1.cli_config,
+    kubernetes_persistent_volume_claim_v1.tool_config,
   ]
   wait_for_rollout = false
   metadata {
@@ -662,8 +662,8 @@ resource "kubernetes_deployment_v1" "main" {
             read_only  = false
           }
           volume_mount {
-            mount_path = "/mnt/coder-cli-config"
-            name       = "cli-config"
+            mount_path = "/mnt/coder-tool-config"
+            name       = "tool-config"
             read_only  = false
           }
         }
@@ -676,9 +676,9 @@ resource "kubernetes_deployment_v1" "main" {
           }
         }
         volume {
-          name = "cli-config"
+          name = "tool-config"
           persistent_volume_claim {
-            claim_name = kubernetes_persistent_volume_claim_v1.cli_config.metadata.0.name
+            claim_name = kubernetes_persistent_volume_claim_v1.tool_config.metadata.0.name
             read_only  = false
           }
         }
