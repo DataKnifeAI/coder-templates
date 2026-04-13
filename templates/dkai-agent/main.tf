@@ -165,9 +165,11 @@ resource "coder_agent" "main" {
       "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git nodejs zstd
+      apparmor bash binutils curl git kubectl nodejs zstd
     # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
     git config --system --add safe.directory '*' 2>/dev/null || true
+    # Optional CLI downloads must not fail the whole startup (set -e): network blips, bad semver, etc.
+    set +e
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
     # Trim GitHub release tag with sed; avoid bash prefix-strip here; Terraform treats dollar-brace as template syntax in this block.
     # Avoid apostrophe in curl -w; avoid command-substitution open-paren on one line if the agent strips dollar signs.
@@ -208,18 +210,7 @@ resource "coder_agent" "main" {
         rm -rf /tmp/bin /tmp/glab.tgz
       fi
     fi
-    # kubectl (Kubernetes official release binary; install once, upgrade by deleting /usr/local/bin/kubectl)
-    # Avoid $$(cmd): if Terraform/Coder leaves $$ as PID+paren, bash errors near '('.
-    if ! command -v kubectl >/dev/null 2>&1; then
-      curl -fsSL https://dl.k8s.io/release/stable.txt -o /tmp/kubectl-stable.txt 2>/dev/null || true
-      if [ ! -s /tmp/kubectl-stable.txt ]; then
-        printf '%s\n' "v1.32.0" > /tmp/kubectl-stable.txt
-      fi
-      read -r KUBECTL_VER < /tmp/kubectl-stable.txt
-      curl -fsSL "https://dl.k8s.io/release/$${KUBECTL_VER}/bin/linux/amd64/kubectl" -o /tmp/kubectl.bin
-      install -m 0755 /tmp/kubectl.bin /usr/local/bin/kubectl
-      rm -f /tmp/kubectl.bin /tmp/kubectl-stable.txt
-    fi
+    # kubectl: installed from Arch extra (pacman above). Avoid dl.k8s.io curl — flaky behind some networks.
     # Rancher CLI (latest linux-amd64 .tar.gz from GitHub releases)
     if ! command -v rancher >/dev/null 2>&1; then
       python3 -c "import json,urllib.request;r=json.load(urllib.request.urlopen('https://api.github.com/repos/rancher/cli/releases/latest'));a=[x for x in r['assets'] if 'linux-amd64' in x['name'] and x['name'].endswith('.tar.gz')];print(a[0]['browser_download_url'] if a else '')" > /tmp/dkai-rancher-url 2>/dev/null || true
@@ -236,6 +227,7 @@ resource "coder_agent" "main" {
         rm -rf /tmp/rancher-cli.tgz /tmp/rancher-extract
       fi
     fi
+    set -e
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
       if [ -d /home/coder ]; then
@@ -417,7 +409,7 @@ WORKERHELPER
     # Do not use pkill -f '…agent worker…': that pattern appears in this script's argv and matches the startup shell (SIGTERM).
     if [ -n "$${CURSOR_API_KEY:-}" ] && [ -x /home/coder/bin/start-cursor-worker ]; then
       if [ -f /tmp/cursor-worker.pid ]; then
-        oldpid="$(cat /tmp/cursor-worker.pid 2>/dev/null || true)"
+        read -r oldpid < /tmp/cursor-worker.pid 2>/dev/null || oldpid=
         [ -n "$$oldpid" ] && kill "$$oldpid" 2>/dev/null || true
         rm -f /tmp/cursor-worker.pid
       fi
