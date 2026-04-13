@@ -190,7 +190,7 @@ resource "coder_agent" "main" {
       "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git kubectl nodejs zstd
+      apparmor bash binutils curl git kubectl nano nodejs zstd
     # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
     git config --system --add safe.directory '*' 2>/dev/null || true
     # Optional CLI downloads must not fail the whole startup (set -e): network blips, bad semver, etc.
@@ -255,42 +255,78 @@ resource "coder_agent" "main" {
     set -e
     if ! id -u coder >/dev/null 2>&1; then
       # PVC is usually mounted at /home/coder before this runs; -m would warn and skip skel.
+      # Prefer UID 1000; if taken, fall back so startup does not abort under set -e.
       if [ -d /home/coder ]; then
-        useradd --no-create-home -u 1000 -d /home/coder -s /bin/bash coder
+        useradd --no-create-home -u 1000 -d /home/coder -s /bin/bash coder 2>/dev/null || \
+        useradd --no-create-home -d /home/coder -s /bin/bash coder || true
       else
-        useradd -m -u 1000 -s /bin/bash coder
+        useradd -m -u 1000 -s /bin/bash coder 2>/dev/null || \
+        useradd -m -s /bin/bash coder || true
       fi
     fi
+    # Only chown when the account exists; avoid invoking chown with a nonexistent user name.
+    _chown_coder() { id -u coder >/dev/null 2>&1 && chown "$$@"; }
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
-    chown -R coder:coder /home/coder 2>/dev/null || true
-    # Second PVC (/mnt/coder-tool-config): persist kube + gh + glab + rancher (active symlinks from ~ below).
-    mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab /mnt/coder-tool-config/rancher
-    chown -R coder:coder /mnt/coder-tool-config 2>/dev/null || true
+    _chown_coder -R coder:coder /home/coder 2>/dev/null || true
+    # Second PVC (/mnt/coder-tool-config): tool CLIs persist under /root only (symlinks below).
+    mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli /mnt/coder-tool-config/config/coder /mnt/coder-tool-config/rancher
     mkdir -p /home/coder/.config
+    # Merge then remove legacy /home/coder tool paths (older templates symlinked coder; we no longer link /home/coder to this PVC).
     if [ -d /home/coder/.kube ] && [ ! -L /home/coder/.kube ]; then
       cp -a /home/coder/.kube/. /mnt/coder-tool-config/kube/ 2>/dev/null || true
       rm -rf /home/coder/.kube
+    elif [ -L /home/coder/.kube ]; then
+      rm -f /home/coder/.kube
     fi
-    ln -sfn /mnt/coder-tool-config/kube /home/coder/.kube
     if [ -d /home/coder/.config/gh ] && [ ! -L /home/coder/.config/gh ]; then
       cp -a /home/coder/.config/gh/. /mnt/coder-tool-config/config/gh/ 2>/dev/null || true
       rm -rf /home/coder/.config/gh
+    elif [ -L /home/coder/.config/gh ]; then
+      rm -f /home/coder/.config/gh
     fi
-    ln -sfn /mnt/coder-tool-config/config/gh /home/coder/.config/gh
-    if [ -d /home/coder/.config/glab ] && [ ! -L /home/coder/.config/glab ]; then
-      cp -a /home/coder/.config/glab/. /mnt/coder-tool-config/config/glab/ 2>/dev/null || true
-      rm -rf /home/coder/.config/glab
+    if [ -d /home/coder/.config/coder ] && [ ! -L /home/coder/.config/coder ]; then
+      cp -a /home/coder/.config/coder/. /mnt/coder-tool-config/config/coder/ 2>/dev/null || true
+      rm -rf /home/coder/.config/coder
+    elif [ -L /home/coder/.config/coder ]; then
+      rm -f /home/coder/.config/coder
     fi
-    ln -sfn /mnt/coder-tool-config/config/glab /home/coder/.config/glab
     if [ -d /home/coder/.rancher ] && [ ! -L /home/coder/.rancher ]; then
       cp -a /home/coder/.rancher/. /mnt/coder-tool-config/rancher/ 2>/dev/null || true
       rm -rf /home/coder/.rancher
+    elif [ -L /home/coder/.rancher ]; then
+      rm -f /home/coder/.rancher
     fi
-    ln -sfn /mnt/coder-tool-config/rancher /home/coder/.rancher
-    chown -R coder:coder /mnt/coder-tool-config /home/coder/.kube /home/coder/.config /home/coder/.rancher 2>/dev/null || true
+    # Point root's config paths at the PVC (default interactive user in this pod).
+    mkdir -p /root/.config
+    if [ -d /root/.kube ] && [ ! -L /root/.kube ]; then
+      cp -a /root/.kube/. /mnt/coder-tool-config/kube/ 2>/dev/null || true
+      rm -rf /root/.kube
+    fi
+    ln -sfn /mnt/coder-tool-config/kube /root/.kube
+    if [ -d /root/.config/gh ] && [ ! -L /root/.config/gh ]; then
+      cp -a /root/.config/gh/. /mnt/coder-tool-config/config/gh/ 2>/dev/null || true
+      rm -rf /root/.config/gh
+    fi
+    ln -sfn /mnt/coder-tool-config/config/gh /root/.config/gh
+    # glab: XDG ~/.config/glab-cli — no merge from legacy paths (ephemeral; PVC is the source of truth)
+    rm -f /root/.config/glab 2>/dev/null
+    rm -rf /root/.config/glab /root/.config/glab-cli 2>/dev/null
+    ln -sfn /mnt/coder-tool-config/config/glab-cli /root/.config/glab-cli
+    if [ -d /root/.config/coder ] && [ ! -L /root/.config/coder ]; then
+      cp -a /root/.config/coder/. /mnt/coder-tool-config/config/coder/ 2>/dev/null || true
+      rm -rf /root/.config/coder
+    fi
+    ln -sfn /mnt/coder-tool-config/config/coder /root/.config/coder
+    if [ -d /root/.rancher ] && [ ! -L /root/.rancher ]; then
+      cp -a /root/.rancher/. /mnt/coder-tool-config/rancher/ 2>/dev/null || true
+      rm -rf /root/.rancher
+    fi
+    ln -sfn /mnt/coder-tool-config/rancher /root/.rancher
+    # Root-owned: only /root symlinks into this PVC (legacy cp may leave mixed ownership).
+    chown -R root:root /mnt/coder-tool-config 2>/dev/null || true
     # Default repo for Cloud Agent worker: clone under /home/coder/<repo-name> (not under ~/git).
     mkdir -p /home/coder
-    chown coder:coder /home/coder 2>/dev/null || true
+    _chown_coder coder:coder /home/coder 2>/dev/null || true
     WORKER_GIT_URL="${trimspace(data.coder_parameter.cursor_worker_git_url.value)}"
     WORKER_REPO_NAME=
     if [ -n "$${WORKER_GIT_URL}" ]; then
@@ -301,7 +337,7 @@ resource "coder_agent" "main" {
         cd /home/coder
         git clone "$${WORKER_GIT_URL}"
       elif ! git -C "/home/coder/$${WORKER_REPO_NAME}" remote get-url origin >/dev/null 2>&1; then
-        chown -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
+        _chown_coder -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
         git -C "/home/coder/$${WORKER_REPO_NAME}" remote add origin "$${WORKER_GIT_URL}" 2>/dev/null || \
           git -C "/home/coder/$${WORKER_REPO_NAME}" remote set-url origin "$${WORKER_GIT_URL}"
       fi
@@ -311,7 +347,7 @@ resource "coder_agent" "main" {
           git -C "/home/coder/$${WORKER_REPO_NAME}" pull 2>/dev/null || true
         git -C "/home/coder/$${WORKER_REPO_NAME}" submodule update --init --recursive || true
       fi
-      chown -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
+      _chown_coder -R coder:coder "/home/coder/$${WORKER_REPO_NAME}" 2>/dev/null || true
     fi
     # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
     CURSOR_SANDBOX_DEB=/tmp/cursor-sandbox-apparmor.deb
@@ -330,16 +366,16 @@ resource "coder_agent" "main" {
     fi
     if [ ! -f /home/coder/.local/bin/agent ]; then
       mkdir -p /home/coder/.local
-      chown coder:coder /home/coder/.local 2>/dev/null || true
+      _chown_coder coder:coder /home/coder/.local 2>/dev/null || true
       curl -fsSL https://cursor.com/install | env HOME=/home/coder USER=coder LOGNAME=coder TAR_OPTIONS=--no-same-owner bash
-      chown -R coder:coder /home/coder/.local /home/coder/.cursor 2>/dev/null || true
+      _chown_coder -R coder:coder /home/coder/.local /home/coder/.cursor 2>/dev/null || true
     fi
     # Cursor agent installs under HOME/.local/bin; terminals often start as root — symlink into PATH.
     if [ -e /home/coder/.local/bin/agent ]; then
       ln -sf /home/coder/.local/bin/agent /usr/local/bin/agent
     fi
     mkdir -p /home/coder/bin
-    chown coder:coder /home/coder/bin 2>/dev/null || true
+    _chown_coder coder:coder /home/coder/bin 2>/dev/null || true
     cat > /home/coder/bin/start-cursor-worker <<'WORKERHELPER'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -370,7 +406,7 @@ WORKERHELPER
     fi
     chmod 0755 /home/coder/bin/start-cursor-worker 2>/dev/null || true
     # NFS / root_squash: chown may fail; 0755 still lets the coder user run the script as "other"
-    chown coder:coder /home/coder/bin/start-cursor-worker 2>/dev/null || true
+    _chown_coder coder:coder /home/coder/bin/start-cursor-worker 2>/dev/null || true
     ln -sf /home/coder/bin/start-cursor-worker /usr/local/bin/start-cursor-worker 2>/dev/null || true
     if [ ! -f /home/coder/.cursor-worker-labels.json.example ]; then
       printf "%s\n" \
@@ -380,7 +416,7 @@ WORKERHELPER
         "  \"capabilities\": [\"docker\"]" \
         "}" \
         > /home/coder/.cursor-worker-labels.json.example
-      chown coder:coder /home/coder/.cursor-worker-labels.json.example 2>/dev/null || true
+      _chown_coder coder:coder /home/coder/.cursor-worker-labels.json.example 2>/dev/null || true
     fi
     if [ -f "$CURSOR_SANDBOX_PROFILE" ] && command -v apparmor_parser >/dev/null 2>&1; then
       apparmor_parser -r "$CURSOR_SANDBOX_PROFILE" 2>/dev/null || true
@@ -413,7 +449,7 @@ WORKERHELPER
       echo "  cursor (agent): not installed"
     fi
     echo ""
-    echo "Tool configs on second PVC: /mnt/coder-tool-config → ~/.kube ~/.config/gh ~/.config/glab ~/.rancher (symlinks)"
+    echo "Tool configs on second PVC: /mnt/coder-tool-config → /root only: .kube .config/{gh,glab-cli,coder} .rancher (symlinks)"
     echo ""
     echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
     echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"

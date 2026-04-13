@@ -108,7 +108,7 @@ resource "coder_agent" "main" {
       "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git nodejs zstd
+      apparmor bash binutils curl git nano nodejs zstd
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
     # Trim GitHub release tag with sed; avoid bash prefix-strip here; Terraform treats dollar-brace as template syntax in this block.
     # Avoid apostrophe in curl -w; avoid command-substitution open-paren on one line if the agent strips dollar signs.
