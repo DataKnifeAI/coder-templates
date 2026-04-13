@@ -7,7 +7,12 @@ terraform {
     kubernetes = {
       source = "hashicorp/kubernetes"
     }
+    external = {
+      source  = "hashicorp/external"
+      version = "~> 2.3"
+    }
   }
+  required_version = ">= 1.5.0"
 }
 
 provider "coder" {
@@ -82,30 +87,10 @@ data "coder_parameter" "home_disk_size" {
   }
 }
 
-data "coder_parameter" "tool_config_volume_mode" {
-  name         = "tool_config_volume_mode"
-  display_name = "Tool config storage"
-  description  = <<-EOF
-  Dedicated (default): second PVC per workspace at /mnt/coder-tool-config (ReadWriteOnce; name coder-<workspace-id>-tool-config).
-  Shared pool: one ReadWriteMany PVC per Coder workspace owner at /mnt/coder-tool-config (name coder-<owner-id>-tool-config), sized by tool_config_disk_size — no cluster-admin PVC and no subpaths. Prefer at most one dkai-agent shared_pool workspace per owner; a second can fail with PVC AlreadyExists unless that claim is imported into the new workspace Terraform state.
-  EOF
-  default      = "dedicated"
-  icon         = "/emojis/1f4be.png"
-  mutable      = true
-  option {
-    name  = "Shared pool (one RWX PVC per Coder user)"
-    value = "shared_pool"
-  }
-  option {
-    name  = "Dedicated PVC per workspace (legacy)"
-    value = "dedicated"
-  }
-}
-
 data "coder_parameter" "tool_config_disk_size" {
   name         = "tool_config_disk_size"
-  display_name = "Tool config disk (kube, gh, glab, rancher)"
-  description  = "Size in GiB of the tool-config PVC mounted at /mnt/coder-tool-config (default 5 GiB; range 1–50 GiB; monotonic increase). Dedicated: one such PVC per workspace. Shared pool: one PVC per Coder owner (same volume for all that owner’s dkai-agent workspaces)."
+  display_name = "Tool config disk (kube, gh, glab-cli, coder, rancher)"
+  description  = "Size in GiB of the shared ReadWriteMany tool-config PVC at /mnt/coder-tool-config (default 5 GiB; range 1–50 GiB; monotonic increase). One PVC per Coder owner (coder-<owner-id>-tool-config); all your dkai-agent workspaces share it. Plan-time cluster check creates the PVC if missing, otherwise attaches to the existing claim."
   default      = "5"
   type         = "number"
   icon         = "/emojis/1f4be.png"
@@ -165,8 +150,27 @@ data "coder_workspace" "me" {}
 data "coder_workspace_owner" "me" {}
 
 locals {
-  # Shared pool: one PVC per Coder user (not per workspace). Name is stable for a given owner id.
+  # One ReadWriteMany tool-config PVC per Coder owner (not per workspace).
   tool_config_user_pvc_name = "coder-${data.coder_workspace_owner.me.id}-tool-config"
+}
+
+# Plan-time: shared PVC may already exist (another workspace created it). Avoid AlreadyExists on create.
+# Probe with the same auth the kubernetes provider uses: in-cluster ServiceAccount + API when
+# use_kubeconfig is false (kubectl is often not installed on the Coder pod).
+data "external" "tool_shared_pvc_exists" {
+  program = [
+    "${path.module}/scripts/tool-shared-pvc-exists.sh",
+    var.namespace,
+    local.tool_config_user_pvc_name,
+    var.use_kubeconfig ? "true" : "false",
+    pathexpand("~/.kube/config"),
+  ]
+}
+
+locals {
+  tool_shared_pvc_exists           = data.external.tool_shared_pvc_exists.result.exists == "true"
+  tool_config_shared_should_create = !local.tool_shared_pvc_exists
+  tool_config_shared_should_join   = local.tool_shared_pvc_exists
 }
 
 resource "coder_agent" "main" {
@@ -270,6 +274,9 @@ resource "coder_agent" "main" {
     _chown_coder -R coder:coder /home/coder 2>/dev/null || true
     # Second PVC (/mnt/coder-tool-config): tool CLIs persist under /root only (symlinks below).
     mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli /mnt/coder-tool-config/config/coder /mnt/coder-tool-config/rancher
+    if ! grep -q '[[:space:]]/mnt/coder-tool-config[[:space:]]' /proc/mounts 2>/dev/null; then
+      echo "WARN: /mnt/coder-tool-config is not listed in /proc/mounts — tool PVC may not be mounted; configs might not persist." >&2
+    fi
     mkdir -p /home/coder/.config
     # Merge then remove legacy /home/coder tool paths (older templates symlinked coder; we no longer link /home/coder to this PVC).
     if [ -d /home/coder/.kube ] && [ ! -L /home/coder/.kube ]; then
@@ -600,39 +607,8 @@ resource "kubernetes_persistent_volume_claim_v1" "home" {
   }
 }
 
-resource "kubernetes_persistent_volume_claim_v1" "tool_config" {
-  count = data.coder_parameter.tool_config_volume_mode.value == "dedicated" ? 1 : 0
-  metadata {
-    name      = "coder-${data.coder_workspace.me.id}-tool-config"
-    namespace = var.namespace
-    labels = {
-      "app.kubernetes.io/name"     = "coder-pvc-tool-config"
-      "app.kubernetes.io/instance" = "coder-pvc-tool-${data.coder_workspace.me.id}"
-      "app.kubernetes.io/part-of"  = "coder"
-      "com.coder.resource"         = "true"
-      "com.coder.workspace.id"     = data.coder_workspace.me.id
-      "com.coder.workspace.name"   = data.coder_workspace.me.name
-      "com.coder.user.id"          = data.coder_workspace_owner.me.id
-      "com.coder.user.username"    = data.coder_workspace_owner.me.name
-    }
-    annotations = {
-      "com.coder.user.email" = data.coder_workspace_owner.me.email
-    }
-  }
-  wait_until_bound = false
-  spec {
-    access_modes       = ["ReadWriteOnce"]
-    storage_class_name = "truenas-csi-nfs"
-    resources {
-      requests = {
-        storage = "${data.coder_parameter.tool_config_disk_size.value}Gi"
-      }
-    }
-  }
-}
-
 resource "kubernetes_persistent_volume_claim_v1" "tool_shared_user" {
-  count = data.coder_parameter.tool_config_volume_mode.value == "shared_pool" ? 1 : 0
+  count = local.tool_config_shared_should_create ? 1 : 0
   metadata {
     name      = local.tool_config_user_pvc_name
     namespace = var.namespace
@@ -648,7 +624,7 @@ resource "kubernetes_persistent_volume_claim_v1" "tool_shared_user" {
       "com.coder.user.email" = data.coder_workspace_owner.me.email
     }
   }
-  wait_until_bound = false
+  wait_until_bound = true
   spec {
     access_modes       = ["ReadWriteMany"]
     storage_class_name = "truenas-csi-nfs"
@@ -660,10 +636,20 @@ resource "kubernetes_persistent_volume_claim_v1" "tool_shared_user" {
   }
 }
 
+data "kubernetes_persistent_volume_claim_v1" "tool_shared_user_join" {
+  count = local.tool_config_shared_should_join ? 1 : 0
+  metadata {
+    name      = local.tool_config_user_pvc_name
+    namespace = var.namespace
+  }
+}
+
 resource "kubernetes_deployment_v1" "main" {
   count = data.coder_workspace.me.start_count
   depends_on = [
     kubernetes_persistent_volume_claim_v1.home,
+    kubernetes_persistent_volume_claim_v1.tool_shared_user,
+    data.kubernetes_persistent_volume_claim_v1.tool_shared_user_join,
   ]
   wait_for_rollout = false
   metadata {
@@ -768,9 +754,9 @@ resource "kubernetes_deployment_v1" "main" {
           name = "tool-config"
           persistent_volume_claim {
             claim_name = (
-              data.coder_parameter.tool_config_volume_mode.value == "shared_pool"
-              ? kubernetes_persistent_volume_claim_v1.tool_shared_user[0].metadata[0].name
-              : kubernetes_persistent_volume_claim_v1.tool_config[0].metadata[0].name
+              local.tool_config_shared_should_join
+              ? data.kubernetes_persistent_volume_claim_v1.tool_shared_user_join[0].metadata[0].name
+              : kubernetes_persistent_volume_claim_v1.tool_shared_user[0].metadata[0].name
             )
             read_only = false
           }
