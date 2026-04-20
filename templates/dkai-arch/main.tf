@@ -109,6 +109,12 @@ resource "coder_agent" "main" {
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
       apparmor bash binutils curl git nano nodejs zstd
+    git config --system --add safe.directory '*' 2>/dev/null || true
+    printf '%s\n' \
+      '# Coder may set GIT_ASKPASS; use gh/glab credential helpers for HTTPS (see templates/dkai-arch/README.md).' \
+      'export GIT_ASKPASS=true' \
+      >/etc/profile.d/dkai-git-askpass.sh
+    chmod 0644 /etc/profile.d/dkai-git-askpass.sh
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
     # Trim GitHub release tag with sed; avoid bash prefix-strip here; Terraform treats dollar-brace as template syntax in this block.
     # Avoid apostrophe in curl -w; avoid command-substitution open-paren on one line if the agent strips dollar signs.
@@ -162,6 +168,23 @@ resource "coder_agent" "main" {
     # Default workspace for Cursor module (folder = /home/coder/git); ensure it exists on fresh PVC.
     mkdir -p /home/coder/git
     chown coder:coder /home/coder/git 2>/dev/null || true
+    if command -v git >/dev/null 2>&1; then
+      if [ -x /usr/local/bin/gh ]; then
+        git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
+      fi
+      if [ -x /usr/local/bin/glab ]; then
+        git config --global credential.https://gitlab.com.helper '!/usr/local/bin/glab auth git-credential'
+      fi
+      if id -u coder >/dev/null 2>&1; then
+        if command -v runuser >/dev/null 2>&1; then
+          [ -x /usr/local/bin/gh ] && runuser -u coder -- git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential' || true
+          [ -x /usr/local/bin/glab ] && runuser -u coder -- git config --global credential.https://gitlab.com.helper '!/usr/local/bin/glab auth git-credential' || true
+        else
+          [ -x /usr/local/bin/gh ] && su -s /bin/bash coder -c "git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'" || true
+          [ -x /usr/local/bin/glab ] && su -s /bin/bash coder -c "git config --global credential.https://gitlab.com.helper '!/usr/local/bin/glab auth git-credential'" || true
+        fi
+      fi
+    fi
     # Cursor Agent terminal sandbox (AppArmor profile); extract .deb manually — pacman’s dpkg lacks zst.
     CURSOR_SANDBOX_DEB=/tmp/cursor-sandbox-apparmor.deb
     CURSOR_SANDBOX_PROFILE=/etc/apparmor.d/cursor-sandbox-remote
@@ -194,6 +217,9 @@ resource "coder_agent" "main" {
     for f in /home/coder/.bashrc /home/coder/.profile; do
       [ -f "$f" ] || touch "$f"
       grep -qF ".local/bin" "$f" 2>/dev/null || printf "%s\n" "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$f"
+      grep -qF "GIT_ASKPASS=true" "$f" 2>/dev/null || printf "%s\n" \
+        "# DKAI: Coder may set GIT_ASKPASS; use gh/glab credential helpers for GitHub/GitLab HTTPS." \
+        "export GIT_ASKPASS=true" >> "$f"
     done
     rm -f /home/coder/.cursor-server/package.json
     echo ""

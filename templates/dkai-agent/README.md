@@ -15,7 +15,7 @@ Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, AppArmor sand
 
 - **`agent` CLI** installed under `/home/coder/.local/bin` (and on `PATH`), same as DKAI Arch.
 - **`kubectl`** from Arch **`extra/kubectl`** via the initial **`pacman`** install (`/usr/bin/kubectl`). **`kubectx`** and **`kubens`** from Arch **`extra/kubectx`** (same install; context / namespace helpers). **`rancher`** CLI is downloaded from GitHub releases to `/usr/local/bin` when missing.
-- **Tool config volume** — one **ReadWriteMany** PVC per **Coder user** at **`/mnt/coder-tool-config`** named **`coder-<owner-id>-tool-config`**. At **plan** time the template checks the cluster (in-cluster API or `kubectl`); if the PVC is missing Terraform **creates** it; if it already exists (another workspace or a prior apply), Terraform **imports** it into this workspace’s state so updates never **destroy** the claim. The PVC resource uses **`lifecycle { prevent_destroy = true }`** so Terraform will not delete it on workspace teardown (shared across your dkai-agent workspaces; remove from state manually if you must drop the claim). **`tool_config_disk_size`** sizes that shared volume. On each boot the startup script **`mkdir`**s layout there, **merges** legacy **`/home/coder`** paths for kube, gh, glab-cli, **Coder CLI** (`~/.config/coderv2`), and rancher into the PVC then removes them; **`/root/.config/glab-cli`** is only **`ln -sfn`** to the PVC (no legacy merge). **`ln -sfn`** also **`/root/.kube`**, **`/root/.config/gh`**, **`/root/.config/coderv2`** (matches **`coder --global-config`**, i.e. **`$CODER_CONFIG_DIR`**), **`/root/.rancher`** → that volume (tool CLIs are expected to run as **root** in this pod). **`kubectl` / `gh` / `glab` / `coder` / `rancher`** as user **`coder`** do not use this PVC unless you point them at **`$HOME=/root`** or **`CODER_CONFIG_DIR`** at the PVC path.
+- **Tool config volume** — one **ReadWriteMany** PVC per **Coder user** at **`/mnt/coder-tool-config`** named **`coder-<owner-id>-tool-config`**. At **plan** time the template checks the cluster (in-cluster API or `kubectl`); if the PVC is missing Terraform **creates** it; if it already exists (another workspace or a prior apply), Terraform **imports** it into this workspace’s state so updates never **destroy** the claim. The PVC resource uses **`lifecycle { prevent_destroy = true }`** so Terraform will not delete it on workspace teardown (shared across your dkai-agent workspaces; remove from state manually if you must drop the claim). **`tool_config_disk_size`** sizes that shared volume. On each boot the startup script **`mkdir`**s layout there, **merges** legacy **`/home/coder`** paths for kube, gh, **Coder CLI** (`~/.config/coderv2`), and rancher into the PVC then removes them; **`/root/.config/glab-cli`** is only **`ln -sfn`** to the PVC (no legacy merge). **`ln -sfn`** also **`/root/.kube`**, **`/root/.config/gh`**, **`/root/.config/coderv2`** (matches **`coder --global-config`**, i.e. **`$CODER_CONFIG_DIR`**), **`/root/.rancher`** → that volume. **`gh`** and **`glab`** configs are symlinked for **both** **`/root`** and **`/home/coder`** (`~/.config/gh`, `~/.config/glab-cli`) so **Cursor agents** (often **`HOME=/home/coder`**) and **interactive root** shells (**`HOME=/root`**) share the same tokens on disk. **`kubectl`**, **Coder CLI**, and **`rancher`** on the PVC are still reached via **`/root`** only; as **`coder`**, use **`HOME=/root`** / **`sudo -E -u root`** for those, or **`CODER_CONFIG_DIR=/mnt/coder-tool-config/config/coderv2`** for the Coder CLI.
 - **Workspace parameter `cursor_api_key`** (optional, masked in the UI): when set, Coder injects **`CURSOR_API_KEY`** into the workspace via `coder_env`. Use the API key from **Cursor Dashboard → Settings → Cursor Settings → API Keys** for the user who owns usage. Leave empty and export it yourself if you prefer not to store the key on the workspace.
 - **`start-cursor-worker`** in `~/bin` and `/usr/local/bin`: runs `agent worker start` (without `--pool`) with your workspace’s **idle-release timeout** (build parameter `cursor_worker_idle_timeout`, default 600 seconds). Honors:
   - **`CURSOR_API_KEY`** — from the parameter above, or a manual `export`.
@@ -25,6 +25,26 @@ Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, AppArmor sand
 - **Example labels file**: `~/.cursor-worker-labels.json.example` (copy and customize).
 
 Workers only need **outbound HTTPS**; no inbound ports are required.
+
+## Git, `gh` / `glab`, and `HOME`
+
+**Why this matters:** Coder may set **`GIT_ASKPASS`** (and sometimes **`GIT_SSH_COMMAND`**) for Git. **`gh`** and **`glab`** store OAuth tokens under **`$HOME/.config/...`**. Cursor agents and some automation run with **`HOME=/home/coder`**, while operators often open an interactive **root** shell where **`HOME=/root`**. Without a shared config path, **`gh auth status`** can show “not logged in” in the agent while the same pod looks logged in as root, and **`git push`** over HTTPS to GitHub can fail with *could not read Username* / *No anonymous write access* even when **`gh`** is logged in.
+
+**What this template does:**
+
+- Symlinks **`~/.config/gh`** and **`~/.config/glab-cli`** for **both** **`coder`** and **`root`** to the same directories on the tool PVC (**`/mnt/coder-tool-config/config/...`**).
+- Sets **`GIT_ASKPASS=true`** in **`/etc/profile.d/dkai-git-askpass.sh`** and appends it to **`/home/coder/.bashrc`** / **`.profile`** so Coder’s askpass does not block **`gh`** / **`glab`** credential helpers.
+- Configures Git (for **root** and **`coder`**) with URL-scoped helpers: **`credential.https://github.com.helper`** → **`gh auth git-credential`**, **`credential.https://gitlab.com.helper`** → **`glab auth git-credential`**.
+
+**Self‑hosted GitLab:** add another **`credential.<url>.helper`** for your host if needed.
+
+**SSH remotes:** If **`GIT_SSH_COMMAND`** or Coder’s Git integration interferes with HTTPS, prefer **`git@github.com:org/repo.git`** when SSH keys are available in the workspace (avoids HTTPS + askpass entirely).
+
+**Manual one‑off (any template without these defaults):** align **`HOME`** with where you ran **`gh auth login`**, or run:
+
+`HOME=/root GIT_ASKPASS=true git -c credential.helper='!/usr/local/bin/gh auth git-credential' <git-subcommand>`
+
+(adjust the **`gh`** path if installed elsewhere).
 
 ## Quick start (inside the workspace)
 

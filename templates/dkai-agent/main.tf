@@ -198,6 +198,12 @@ resource "coder_agent" "main" {
       apparmor bash binutils curl git kubectl kubectx nano nodejs zstd
     # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
     git config --system --add safe.directory '*' 2>/dev/null || true
+    # Coder often sets GIT_ASKPASS for git; neutralize so gh/glab credential helpers can supply HTTPS tokens.
+    printf '%s\n' \
+      '# Managed by DKAI Agent template (see templates/dkai-agent/README.md).' \
+      'export GIT_ASKPASS=true' \
+      >/etc/profile.d/dkai-git-askpass.sh
+    chmod 0644 /etc/profile.d/dkai-git-askpass.sh
     # Optional CLI downloads must not fail the whole startup (set -e): network blips, bad semver, etc.
     set +e
     # gh/glab: upstream binaries (Arch pkgs pull sudo). Each start: resolve latest stable from release APIs, reinstall if outdated.
@@ -331,6 +337,9 @@ resource "coder_agent" "main" {
     rm -f /root/.config/glab 2>/dev/null
     rm -rf /root/.config/glab /root/.config/glab-cli 2>/dev/null
     ln -sfn /mnt/coder-tool-config/config/glab-cli /root/.config/glab-cli
+    # Same PVC paths for coder (Cursor agent / automation often use HOME=/home/coder; root shells use HOME=/root).
+    ln -sfn /mnt/coder-tool-config/config/gh /home/coder/.config/gh
+    ln -sfn /mnt/coder-tool-config/config/glab-cli /home/coder/.config/glab-cli
     if [ -d /root/.config/coderv2 ] && [ ! -L /root/.config/coderv2 ]; then
       cp -a /root/.config/coderv2/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
       rm -rf /root/.config/coderv2
@@ -345,8 +354,26 @@ resource "coder_agent" "main" {
       rm -rf /root/.rancher
     fi
     ln -sfn /mnt/coder-tool-config/rancher /root/.rancher
-    # Root-owned: only /root symlinks into this PVC (legacy cp may leave mixed ownership).
-    chown -R root:root /mnt/coder-tool-config 2>/dev/null || true
+    # kube/coderv2/rancher: root; gh/glab-cli: coder (both UIDs symlink here; root can still read/write).
+    chown -R root:root /mnt/coder-tool-config/kube /mnt/coder-tool-config/rancher /mnt/coder-tool-config/config/coderv2 2>/dev/null || true
+    chown -R coder:coder /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli 2>/dev/null || true
+    if command -v git >/dev/null 2>&1; then
+      if [ -x /usr/local/bin/gh ]; then
+        git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
+      fi
+      if [ -x /usr/local/bin/glab ]; then
+        git config --global credential.https://gitlab.com.helper '!/usr/local/bin/glab auth git-credential'
+      fi
+      if id -u coder >/dev/null 2>&1; then
+        if command -v runuser >/dev/null 2>&1; then
+          [ -x /usr/local/bin/gh ] && runuser -u coder -- git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential' || true
+          [ -x /usr/local/bin/glab ] && runuser -u coder -- git config --global credential.https://gitlab.com.helper '!/usr/local/bin/glab auth git-credential' || true
+        else
+          [ -x /usr/local/bin/gh ] && su -s /bin/bash coder -c "git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'" || true
+          [ -x /usr/local/bin/glab ] && su -s /bin/bash coder -c "git config --global credential.https://gitlab.com.helper '!/usr/local/bin/glab auth git-credential'" || true
+        fi
+      fi
+    fi
     # Default repo for Cloud Agent worker: clone under /home/coder/<repo-name> (not under ~/git).
     mkdir -p /home/coder
     _chown_coder coder:coder /home/coder 2>/dev/null || true
@@ -448,6 +475,9 @@ WORKERHELPER
     for f in /home/coder/.bashrc /home/coder/.profile; do
       [ -f "$f" ] || touch "$f"
       grep -qF ".local/bin" "$f" 2>/dev/null || printf "%s\n" "export PATH=\"\$HOME/.local/bin:\$HOME/bin:\$PATH\"" >> "$f"
+      grep -qF "GIT_ASKPASS=true" "$f" 2>/dev/null || printf "%s\n" \
+        "# DKAI: Coder may set GIT_ASKPASS; use gh/glab credential helpers for GitHub/GitLab HTTPS." \
+        "export GIT_ASKPASS=true" >> "$f"
     done
     rm -f /home/coder/.cursor-server/package.json
     echo ""
@@ -474,7 +504,7 @@ WORKERHELPER
       echo "  cursor (agent): not installed"
     fi
     echo ""
-    echo "Tool configs on second PVC: /mnt/coder-tool-config → /root only: .kube .config/{gh,glab-cli,coderv2} .rancher (symlinks)"
+    echo "Tool configs on second PVC: /mnt/coder-tool-config — symlinks: /root and /home/coder share .config/{gh,glab-cli}; /root only: .kube .config/coderv2 .rancher"
     echo ""
     echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
     echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"
@@ -486,8 +516,8 @@ WORKERHELPER
     echo "  Or run manually: start-cursor-worker"
     echo "  (idle-release-timeout defaults from workspace parameter cursor_worker_idle_timeout)"
     echo ""
-    echo "=== Other CLI (run as the workspace user) ==="
-    echo "  GitHub:  gh auth login"
+    echo "=== Other CLI (gh/glab auth is shared: /home/coder and /root use the same PVC paths) ==="
+    echo "  GitHub:  gh auth login   # ok as coder or root; Cursor agent uses HOME=/home/coder"
     echo "  GitLab:  glab auth login"
     echo "  Coder:   this workspace is linked; CLI elsewhere: coder login <your-coder-url>"
     echo ""

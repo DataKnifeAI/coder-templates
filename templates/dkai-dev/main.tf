@@ -119,6 +119,28 @@ resource "coder_agent" "main" {
       curl -fsSL "https://raw.githubusercontent.com/upciti/wakemeops/main/assets/install_repository" | sudo bash
       sudo apt-get install -y glab
     fi
+    sudo git config --system --add safe.directory '*' 2>/dev/null || true
+    printf '%s\n' \
+      '# Coder may set GIT_ASKPASS; use gh/glab credential helpers for HTTPS (see templates/dkai-dev/README.md).' \
+      'export GIT_ASKPASS=true' \
+      | sudo tee /etc/profile.d/dkai-git-askpass.sh >/dev/null
+    sudo chmod 0644 /etc/profile.d/dkai-git-askpass.sh
+    if command -v git >/dev/null 2>&1; then
+      if [ -x /usr/bin/gh ]; then
+        sudo git config --global credential.https://github.com.helper '!/usr/bin/gh auth git-credential'
+      fi
+      if [ -x /usr/bin/glab ]; then
+        sudo git config --global credential.https://gitlab.com.helper '!/usr/bin/glab auth git-credential'
+      fi
+      if id -u coder >/dev/null 2>&1; then
+        if [ -x /usr/bin/gh ]; then
+          sudo -u coder git config --global credential.https://github.com.helper '!/usr/bin/gh auth git-credential' || true
+        fi
+        if [ -x /usr/bin/glab ]; then
+          sudo -u coder git config --global credential.https://gitlab.com.helper '!/usr/bin/glab auth git-credential' || true
+        fi
+      fi
+    fi
     # Cursor Agent terminal sandbox — cursor.com/docs/agent/terminal
     # postinst only runs apparmor_parser if systemd apparmor.service is active; force-load in containers.
     if ! dpkg -l cursor-sandbox-apparmor 2>/dev/null | grep -q '^ii'; then
@@ -144,6 +166,9 @@ resource "coder_agent" "main" {
     for f in /home/coder/.bashrc /home/coder/.profile; do
       [ -f "$f" ] || touch "$f"
       grep -qF '.local/bin' "$f" 2>/dev/null || echo "$CURSOR_PATH" >> "$f"
+      grep -qF 'GIT_ASKPASS=true' "$f" 2>/dev/null || printf '%s\n' \
+        '# DKAI: Coder may set GIT_ASKPASS; use gh/glab credential helpers for GitHub/GitLab HTTPS.' \
+        'export GIT_ASKPASS=true' >> "$f"
     done
     # Remove any leftover package.json from old workaround (breaks multiplex + code server)
     rm -f /home/coder/.cursor-server/package.json

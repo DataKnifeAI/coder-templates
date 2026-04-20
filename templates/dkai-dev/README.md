@@ -38,5 +38,9 @@ This means, when the workspace restarts, any tools or files outside of the home 
 
 The startup script installs Cursor’s **`cursor-sandbox-apparmor`** package (see [Terminal / Sandbox](https://cursor.com/docs/agent/terminal)) and then runs **`apparmor_parser -r`** on `cursor-sandbox-remote` so the profile loads in containers where the package `postinst` skips loading (no active `apparmor.service`). The cluster node must still permit user namespaces and AppArmor as required by your runtime.
 
+### Git, `gh` / `glab`, and Coder
+
+Same defaults as **DKAI Arch**: **`GIT_ASKPASS=true`**, Git credential helpers for **github.com** / **gitlab.com** via **`gh`** / **`glab`**, and **`safe.directory *`**. Details: **[DKAI Agent — Git, gh / glab, and HOME](../dkai-agent/README.md#git-gh--glab-and-home)**.
+
 > **Note**
 > This template is designed to be a starting point! Edit the Terraform to extend the template to support your use case.

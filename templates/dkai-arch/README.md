@@ -19,6 +19,10 @@ The stock Arch image has no preconfigured workspace user. The pod runs as **root
 
 First start may take longer while packages sync and install.
 
+## Git, `gh` / `glab`, and Coder
+
+The startup script sets **`GIT_ASKPASS=true`** (so Coder’s **`GIT_ASKPASS`** does not block HTTPS credentials), configures Git URL helpers for **github.com** / **gitlab.com** via **`gh auth git-credential`** and **`glab auth git-credential`** for both **root** and **`coder`**, and adds **`safe.directory *`** for NFS-style ownership. For **Cursor agent vs `HOME`**, **`gh`** / **`glab`** config paths, and **SSH** remotes, see **[DKAI Agent — Git, gh / glab, and HOME](../dkai-agent/README.md#git-gh--glab-and-home)** (the Agent template additionally symlinks PVC-backed CLI config for both users).
+
 ## Prerequisites
 
 - **Cluster**: Existing Kubernetes namespace (same as other templates).
