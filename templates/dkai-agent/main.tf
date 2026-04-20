@@ -280,7 +280,7 @@ resource "coder_agent" "main" {
     _chown_coder() { id -u coder >/dev/null 2>&1 && chown "$$@"; }
     # May fail on NFS (root_squash); home should already be UID/GID 1000 from storage.
     _chown_coder -R coder:coder /home/coder 2>/dev/null || true
-    # Second PVC (/mnt/coder-tool-config): tool CLIs persist under /root only (symlinks below).
+    # Second PVC (/mnt/coder-tool-config): symlinks from /root and /home/coder (see below).
     mkdir -p /mnt/coder-tool-config/kube /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli /mnt/coder-tool-config/config/coderv2 /mnt/coder-tool-config/rancher
     # Coder CLI v2 uses ~/.config/coderv2 (--global-config / $CODER_CONFIG_DIR), not ~/.config/coder.
     if [ -d /mnt/coder-tool-config/config/coder ] && [ -z "$$(ls -A /mnt/coder-tool-config/config/coderv2 2>/dev/null)" ]; then
@@ -302,6 +302,12 @@ resource "coder_agent" "main" {
       rm -rf /home/coder/.config/gh
     elif [ -L /home/coder/.config/gh ]; then
       rm -f /home/coder/.config/gh
+    fi
+    if [ -d /home/coder/.config/glab-cli ] && [ ! -L /home/coder/.config/glab-cli ]; then
+      cp -a /home/coder/.config/glab-cli/. /mnt/coder-tool-config/config/glab-cli/ 2>/dev/null || true
+      rm -rf /home/coder/.config/glab-cli
+    elif [ -L /home/coder/.config/glab-cli ]; then
+      rm -f /home/coder/.config/glab-cli
     fi
     if [ -d /home/coder/.config/coderv2 ] && [ ! -L /home/coder/.config/coderv2 ]; then
       cp -a /home/coder/.config/coderv2/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
@@ -333,13 +339,10 @@ resource "coder_agent" "main" {
       rm -rf /root/.config/gh
     fi
     ln -sfn /mnt/coder-tool-config/config/gh /root/.config/gh
-    # glab: XDG ~/.config/glab-cli — no merge from legacy paths (ephemeral; PVC is the source of truth)
+    # glab: XDG ~/.config/glab-cli (legacy under /home/coder merged above; PVC is source of truth)
     rm -f /root/.config/glab 2>/dev/null
     rm -rf /root/.config/glab /root/.config/glab-cli 2>/dev/null
     ln -sfn /mnt/coder-tool-config/config/glab-cli /root/.config/glab-cli
-    # Same PVC paths for coder (Cursor agent / automation often use HOME=/home/coder; root shells use HOME=/root).
-    ln -sfn /mnt/coder-tool-config/config/gh /home/coder/.config/gh
-    ln -sfn /mnt/coder-tool-config/config/glab-cli /home/coder/.config/glab-cli
     if [ -d /root/.config/coderv2 ] && [ ! -L /root/.config/coderv2 ]; then
       cp -a /root/.config/coderv2/. /mnt/coder-tool-config/config/coderv2/ 2>/dev/null || true
       rm -rf /root/.config/coderv2
@@ -354,9 +357,14 @@ resource "coder_agent" "main" {
       rm -rf /root/.rancher
     fi
     ln -sfn /mnt/coder-tool-config/rancher /root/.rancher
-    # kube/coderv2/rancher: root; gh/glab-cli: coder (both UIDs symlink here; root can still read/write).
-    chown -R root:root /mnt/coder-tool-config/kube /mnt/coder-tool-config/rancher /mnt/coder-tool-config/config/coderv2 2>/dev/null || true
-    chown -R coder:coder /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli 2>/dev/null || true
+    # coder: same PVC paths (HOME=/home/coder — Cursor agent, kubectl, coder CLI, gh/glab, rancher).
+    ln -sfn /mnt/coder-tool-config/kube /home/coder/.kube
+    ln -sfn /mnt/coder-tool-config/config/gh /home/coder/.config/gh
+    ln -sfn /mnt/coder-tool-config/config/glab-cli /home/coder/.config/glab-cli
+    ln -sfn /mnt/coder-tool-config/config/coderv2 /home/coder/.config/coderv2
+    ln -sfn /mnt/coder-tool-config/rancher /home/coder/.rancher
+    # coder:coder on tool PVC so root and coder share files without root-only tokens (fixes glab/gh as coder).
+    chown -R coder:coder /mnt/coder-tool-config/kube /mnt/coder-tool-config/rancher /mnt/coder-tool-config/config/coderv2 /mnt/coder-tool-config/config/gh /mnt/coder-tool-config/config/glab-cli 2>/dev/null || true
     if command -v git >/dev/null 2>&1; then
       if [ -x /usr/local/bin/gh ]; then
         git config --global credential.https://github.com.helper '!/usr/local/bin/gh auth git-credential'
@@ -504,7 +512,7 @@ WORKERHELPER
       echo "  cursor (agent): not installed"
     fi
     echo ""
-    echo "Tool configs on second PVC: /mnt/coder-tool-config — symlinks: /root and /home/coder share .config/{gh,glab-cli}; /root only: .kube .config/coderv2 .rancher"
+    echo "Tool configs on second PVC: /mnt/coder-tool-config — /root and /home/coder symlink: .kube .config/{gh,glab-cli,coderv2} .rancher"
     echo ""
     echo "=== Cursor Cloud Agent worker (individual API key; not team pool) ==="
     echo "  Docs: https://cursor.com/docs/cli/overview — API key: Dashboard → Cursor Settings → API Keys"
