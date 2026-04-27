@@ -195,7 +195,7 @@ resource "coder_agent" "main" {
       "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git kubectl kubectx nano nodejs zstd
+      apparmor bash binutils curl git kubectl kubectx nano nodejs unzip zstd
     # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
     git config --system --add safe.directory '*' 2>/dev/null || true
     # Coder often sets GIT_ASKPASS for git; neutralize so gh/glab credential helpers can supply HTTPS tokens.
@@ -262,6 +262,20 @@ resource "coder_agent" "main" {
         fi
         rm -f /tmp/dkai-rancher-binpath
         rm -rf /tmp/rancher-cli.tgz /tmp/rancher-extract
+      fi
+    fi
+    # HashiCorp Terraform: zip from releases.hashicorp.com (Arch community/terraform pulls extra deps).
+    TF_VERSION=1.13.5
+    if command -v terraform >/dev/null 2>&1; then
+      TF_CUR=$(terraform version -json 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('terraform_version',''))" 2>/dev/null || true)
+    else
+      TF_CUR=
+    fi
+    if [ "$${TF_CUR}" != "$${TF_VERSION}" ]; then
+      if curl -fsSL "https://releases.hashicorp.com/terraform/$${TF_VERSION}/terraform_$${TF_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip; then
+        unzip -o -q /tmp/terraform.zip -d /tmp/terraform-extract
+        install -m 0755 /tmp/terraform-extract/terraform /usr/local/bin/terraform
+        rm -rf /tmp/terraform-extract /tmp/terraform.zip
       fi
     fi
     set -e
@@ -504,6 +518,7 @@ WORKERHELPER
     if command -v kubectx >/dev/null 2>&1; then echo "  kubectx: installed"; else echo "  kubectx: not found"; fi
     if command -v kubens >/dev/null 2>&1; then echo "  kubens: installed"; else echo "  kubens: not found"; fi
     if command -v rancher >/dev/null 2>&1; then rancher --version 2>/dev/null | head -n1 || echo "  rancher: installed"; else echo "  rancher: not found"; fi
+    if command -v terraform >/dev/null 2>&1; then terraform version 2>/dev/null | head -n1 || echo "  terraform: installed"; else echo "  terraform: not found"; fi
     if command -v coder >/dev/null 2>&1; then coder version 2>/dev/null | head -n1; else echo "  coder: not found"; fi
     if command -v agent >/dev/null 2>&1; then
       echo -n "  cursor (agent): "
