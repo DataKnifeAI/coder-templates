@@ -81,6 +81,17 @@ push-to-coder:
     - test:dkai-hermes
   before_script:
     - apt-get update && apt-get install -y curl ca-certificates
+    # K8s/GitLab runners may set SSL_CERT_FILE/CURL_CA_BUNDLE to a host path absent in
+    # ubuntu:24.04 — curl then fails with exit 77 (error setting certificate file).
+    - |
+      for _var in SSL_CERT_FILE CURL_CA_BUNDLE REQUESTS_CA_BUNDLE; do
+        _val="$(printenv "$_var" 2>/dev/null || true)"
+        if [ -n "$_val" ] && [ ! -f "$_val" ]; then
+          unset "$_var"
+        fi
+      done
+      export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+      export CURL_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
     - curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     - coder version
   script:
