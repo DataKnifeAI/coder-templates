@@ -14,6 +14,7 @@ This repository contains reusable Coder templates for provisioning development w
 | **DKAI DevPod** (`dkai-dev`) | Cursor IDE on Kubernetes (Ubuntu) — 2/4 CPU, 4/8 GB RAM, 50–100 GB disk (no subdomain required) |
 | **DKAI Arch** (`dkai-arch`) | Same as **DKAI DevPod** on **Arch Linux** (`archlinux` image, pacman, gh/glab from repos) |
 | **DKAI Agent** (`dkai-agent`) | **DKAI Arch** plus Cloud Agent worker (`start-cursor-worker`), second PVC for tool configs (`kubectl` / `rancher` / gh / glab), individual API key |
+| **DKAI Hermes** (`dkai-hermes`) | **Hermes Agent** controller → remote **[Enodios](https://github.com/DataKnifeAI/enodios) vLLM** (`vllm.dataknife.net`; Enodios does not run in the workspace) |
 
 ## References
 
@@ -76,7 +77,10 @@ coder-templates/
     ├── dkai-arch/
     │   ├── main.tf
     │   └── README.md
-    └── dkai-agent/
+    ├── dkai-agent/
+    │   ├── main.tf
+    │   └── README.md
+    └── dkai-hermes/
         ├── main.tf
         └── README.md
 ```

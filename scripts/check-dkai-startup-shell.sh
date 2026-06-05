@@ -6,6 +6,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 TEMPLATES=(
   dkai-arch
   dkai-agent
+  dkai-hermes
 )
 
 for name in "${TEMPLATES[@]}"; do

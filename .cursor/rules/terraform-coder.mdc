@@ -9,8 +9,8 @@ alwaysApply: false
 ## Project Context
 
 - Custom Coder workspace templates for DataKnife
-- **DKAI templates**: display name `DKAI <Template>` (e.g. DKAI DevPod, DKAI Arch, DKAI Agent); internal ID / directory `dkai-<template>` (`dkai-dev`, `dkai-arch`, `dkai-agent`).
-- Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` / `dkai-agent` (Cursor CLI via startup script, no subdomain; Arch variants use `archlinux` image; `dkai-arch` uses `coder/cursor` module for Desktop button; `dkai-agent` omits that module, uses `coder_env` + end-of-startup script to auto-start `agent worker start` without `--pool` when `cursor_api_key` is set — individual account API key, not team pool)
+- **DKAI templates**: display name `DKAI <Template>` (e.g. DKAI DevPod, DKAI Arch, DKAI Agent, DKAI Hermes); internal ID / directory `dkai-<template>` (`dkai-dev`, `dkai-arch`, `dkai-agent`, `dkai-hermes`).
+- Templates: `kubernetes` (code-server), `dkai-dev` / `dkai-arch` / `dkai-agent` / `dkai-hermes` (Cursor CLI via startup script on dev/arch only; Arch variants use `archlinux` image; `dkai-arch` uses `coder/cursor` module for Desktop button; `dkai-agent` omits that module, uses `coder_env` + end-of-startup script to auto-start `agent worker start` without `--pool` when `cursor_api_key` is set; `dkai-hermes` Hermes controller only — remote Enodios vLLM at vllm.dataknife.net (Enodios not installed in workspace), no Cursor worker)
 - Validate with `make test` before committing
 
 ## Coder Provider

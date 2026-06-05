@@ -62,6 +62,12 @@ test:dkai-agent:
     TEMPLATE_NAME: dkai-agent
   # Startup shell is checked in test:dkai-arch (scripts/check-dkai-startup-shell.sh covers all Arch templates)
 
+test:dkai-hermes:
+  <<: *test_template
+  variables:
+    TEMPLATE_NAME: dkai-hermes
+  # Startup shell is checked in test:dkai-arch (scripts/check-dkai-startup-shell.sh covers all Arch templates)
+
 push-to-coder:
   stage: deploy
   tags:
@@ -72,13 +78,14 @@ push-to-coder:
     - test:dkai-dev
     - test:dkai-arch
     - test:dkai-agent
+    - test:dkai-hermes
   before_script:
     - apt-get update && apt-get install -y curl ca-certificates
     - curl -fsSL https://coder.dataknife.net/install.sh | sh -s --
     - coder version
   script:
     - |
-      for template in kubernetes dkai-dev dkai-arch dkai-agent; do
+      for template in kubernetes dkai-dev dkai-arch dkai-agent dkai-hermes; do
         if [ -d "templates/$template" ]; then
           echo "Pushing template: $template"
           coder templates push "$template" --directory "templates/$template" --activate=false -y
