@@ -4,7 +4,7 @@
 
 .NOTPARALLEL:
 
-TEMPLATES := kubernetes dkai-dev dkai-arch dkai-agent
+TEMPLATES := kubernetes dkai-dev dkai-arch dkai-agent dkai-hermes
 TERRAFORM := terraform
 
 # V=1 enables verbose/debug output
@@ -25,7 +25,7 @@ CODER_ORGANIZATION ?= coder
 # Kubernetes namespace for templates that define var.namespace (must match templates/<name>/terraform.tfvars)
 K8S_NAMESPACE ?= coder-workspaces
 
-.PHONY: test test-all fmt-check init validate clean fmt debug check-dkai-startup template-push push-dkai-agent
+.PHONY: test test-all fmt-check init validate clean fmt debug check-dkai-startup template-push push-dkai-agent push-dkai-hermes
 
 # Validate all templates (init, validate, format check)
 test: test-all
@@ -94,3 +94,6 @@ template-push:
 
 push-dkai-agent:
 	@$(MAKE) template-push TEMPLATE=dkai-agent MSG="$(MSG)"
+
+push-dkai-hermes:
+	@$(MAKE) template-push TEMPLATE=dkai-hermes MSG="$(MSG)"

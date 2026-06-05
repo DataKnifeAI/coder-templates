@@ -18,7 +18,7 @@ jobs:
       fail-fast: false
       matrix:
         # Add new template directories here when created
-        template: [kubernetes, dkai-dev, dkai-arch, dkai-agent]
+        template: [kubernetes, dkai-dev, dkai-arch, dkai-agent, dkai-hermes]
     steps:
       - name: Checkout
         uses: actions/checkout@v5
