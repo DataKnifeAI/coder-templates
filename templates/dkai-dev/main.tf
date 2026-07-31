@@ -132,7 +132,8 @@ resource "coder_agent" "main" {
     command -v gradle >/dev/null 2>&1 || LANG_APT="$LANG_APT gradle"
     command -v ruby >/dev/null 2>&1 || LANG_APT="$LANG_APT ruby-full"
     command -v php >/dev/null 2>&1 || LANG_APT="$LANG_APT php-cli php"
-    command -v rustc >/dev/null 2>&1 || LANG_APT="$LANG_APT rustc cargo build-essential"
+    command -v rustc >/dev/null 2>&1 || LANG_APT="$LANG_APT rustc cargo"
+    command -v gcc >/dev/null 2>&1 || LANG_APT="$LANG_APT build-essential"
     if [ -n "$LANG_APT" ]; then
       sudo apt-get update
       # shellcheck disable=SC2086
