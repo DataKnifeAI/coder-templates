@@ -11,6 +11,8 @@ tags: [kubernetes, container]
 
 Kubernetes [Coder workspaces](https://coder.com/docs/workspaces) with Cursor Desktop integration (`coder/cursor` module) and an Ubuntu-based dev container.
 
+**Startup installs** (idempotent): Node.js 20+, **pnpm**, **Python** (pip/venv) + **uv**, **Go**, **Rust**, **Java** (OpenJDK, Maven, Gradle), **Ruby**, **PHP**, **.NET SDK 8**, **C/C++** (`build-essential`), plus **gh**, **glab**, Cursor sandbox AppArmor, and Coder/Cursor CLI. See [docs/build-parameters.md](../../docs/build-parameters.md#preinstalled-dev-toolchains).
+
 <!-- TODO: Add screenshot -->
 
 ## Prerequisites

@@ -9,7 +9,9 @@ tags: [kubernetes, container, archlinux, cursor]
 
 # DKAI Arch
 
-Same layout as **DKAI DevPod** (`dkai-dev`) (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `binutils` for `ar`, `zstd`, `nodejs`, `github-cli` (`gh`), `glab`). Cursor’s **`cursor-sandbox-apparmor`** `.deb` is unpacked with `ar` + `zstd` (not `dpkg`, which mishandles this package on Arch), then **`apparmor_parser -r`** is run so the profile loads even without systemd’s `apparmor.service` (the `.deb` postinst normally skips that in containers).
+Same layout as **DKAI DevPod** (`dkai-dev`) (CPU/memory/disk parameters, Cursor module, persistent `/home/coder`), but the workload uses the official **[`archlinux`](https://hub.docker.com/_/archlinux)** image and **pacman** for tooling (`apparmor`, `binutils`, `gcc`, `zstd`, `nodejs`, `pnpm`, `python`, `uv`, `go`, `rust`, `jdk-openjdk`, `maven`, `gradle`, `ruby`, `php`, `dotnet-sdk`, plus `gh`/`glab` from release binaries). Cursor’s **`cursor-sandbox-apparmor`** `.deb` is unpacked with `ar` + `zstd` (not `dpkg`, which mishandles this package on Arch), then **`apparmor_parser -r`** is run so the profile loads even without systemd’s `apparmor.service` (the `.deb` postinst normally skips that in containers).
+
+Full toolchain list: [docs/build-parameters.md](../../docs/build-parameters.md#preinstalled-dev-toolchains).
 
 The Cursor module opens **`/home/coder/git`** (i.e. `~/git` for the `coder` user). That directory is created at startup if missing.
 
