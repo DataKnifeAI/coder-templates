@@ -244,7 +244,7 @@ resource "coder_agent" "main" {
     cargo --version 2>/dev/null || echo "  cargo: (not found)"
     echo ""
     echo "Java"
-    javac -version 2>/dev/null || echo "  javac: (not found)"
+    javac -version 2>&1 || echo "  javac: (not found)"
     if command -v mvn >/dev/null 2>&1; then mvn -version 2>/dev/null | head -n1; else echo "  maven: (not found)"; fi
     if command -v gradle >/dev/null 2>&1; then gradle --version 2>/dev/null | head -n1; else echo "  gradle: (not found)"; fi
     echo ""
@@ -252,13 +252,13 @@ resource "coder_agent" "main" {
     ruby --version 2>/dev/null || echo "  (not found)"
     echo ""
     echo "PHP"
-    php --version 2>/dev/null | head -n1 || echo "  (not found)"
+    if command -v php >/dev/null 2>&1; then php --version 2>/dev/null | head -n1; else echo "  php: (not found)"; fi
     echo ""
     echo ".NET"
     dotnet --version 2>/dev/null || echo "  (not found)"
     echo ""
     echo "C/C++"
-    gcc --version 2>/dev/null | head -n1 || echo "  gcc: (not found)"
+    if command -v gcc >/dev/null 2>&1; then gcc --version 2>/dev/null | head -n1; else echo "  gcc: (not found)"; fi
     echo ""
     echo "CLI tools"
     if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo "  gh: not found"; fi
