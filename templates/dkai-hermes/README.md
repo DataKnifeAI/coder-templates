@@ -32,6 +32,7 @@ You ──► Hermes Agent (this Coder workspace — tools, files, terminal)
 ## What you get
 
 - **`hermes` CLI** — agent with tools; config on tool PVC at `~/.hermes`.
+- **Dev toolchains** — same **pacman** language stack as **DKAI Arch** (Node.js, pnpm, Python, uv, Go, Rust, Java/Maven/Gradle, Ruby, PHP, .NET, gcc). See [docs/build-parameters.md](../../docs/build-parameters.md#preinstalled-dev-toolchains).
 - **Remote vLLM parameters** — Hermes `custom_providers` block (Enodios layout) rewritten each start:
   - **`vllm_base_url`** — default `https://vllm.dataknife.net/v1`
   - **`vllm_model`** — default `hermes3:8b`

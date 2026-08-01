@@ -119,6 +119,44 @@ resource "coder_agent" "main" {
       curl -fsSL "https://raw.githubusercontent.com/upciti/wakemeops/main/assets/install_repository" | sudo bash
       sudo apt-get install -y glab
     fi
+    # Popular dev languages (apt; idempotent — skip packages already installed)
+    LANG_APT=
+    command -v go >/dev/null 2>&1 || LANG_APT="$LANG_APT golang-go"
+    if ! command -v python3 >/dev/null 2>&1; then
+      LANG_APT="$LANG_APT python3 python3-pip python3-venv"
+    elif ! command -v pip3 >/dev/null 2>&1; then
+      LANG_APT="$LANG_APT python3-pip python3-venv"
+    fi
+    command -v javac >/dev/null 2>&1 || LANG_APT="$LANG_APT default-jdk"
+    command -v mvn >/dev/null 2>&1 || LANG_APT="$LANG_APT maven"
+    command -v gradle >/dev/null 2>&1 || LANG_APT="$LANG_APT gradle"
+    command -v ruby >/dev/null 2>&1 || LANG_APT="$LANG_APT ruby-full"
+    command -v php >/dev/null 2>&1 || LANG_APT="$LANG_APT php-cli php"
+    command -v rustc >/dev/null 2>&1 || LANG_APT="$LANG_APT rustc cargo"
+    command -v gcc >/dev/null 2>&1 || LANG_APT="$LANG_APT build-essential"
+    if [ -n "$LANG_APT" ]; then
+      sudo apt-get update
+      # shellcheck disable=SC2086
+      sudo apt-get install -y $LANG_APT
+    fi
+    # .NET SDK (Microsoft apt feed)
+    if ! command -v dotnet >/dev/null 2>&1; then
+      if [ ! -f /etc/apt/sources.list.d/microsoft-prod.list ]; then
+        UBUNTU_VER=$(. /etc/os-release && echo "$VERSION_ID")
+        curl -fsSL "https://packages.microsoft.com/config/ubuntu/$UBUNTU_VER/packages-microsoft-prod.deb" -o /tmp/packages-microsoft-prod.deb
+        sudo dpkg -i /tmp/packages-microsoft-prod.deb
+      fi
+      sudo apt-get update
+      sudo apt-get install -y dotnet-sdk-8.0
+    fi
+    # pnpm (Node package manager)
+    if command -v npm >/dev/null 2>&1 && ! command -v pnpm >/dev/null 2>&1; then
+      sudo npm install -g pnpm
+    fi
+    # uv (Python package manager)
+    if ! command -v uv >/dev/null 2>&1; then
+      curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
+    fi
     sudo git config --system --add safe.directory '*' 2>/dev/null || true
     printf '%s\n' \
       '# Coder may set GIT_ASKPASS; use gh/glab credential helpers for HTTPS (see templates/dkai-dev/README.md).' \
@@ -180,6 +218,35 @@ resource "coder_agent" "main" {
     echo ''
     echo 'Node.js'
     node -v 2>/dev/null || echo '  (not found)'
+    if command -v pnpm >/dev/null 2>&1; then pnpm -v 2>/dev/null | sed 's/^/  pnpm: v/'; else echo '  pnpm: (not found)'; fi
+    echo ''
+    echo 'Python'
+    python3 --version 2>/dev/null || echo '  (not found)'
+    if command -v uv >/dev/null 2>&1; then uv --version 2>/dev/null | head -n1; else echo '  uv: (not found)'; fi
+    echo ''
+    echo 'Go'
+    go version 2>/dev/null || echo '  (not found)'
+    echo ''
+    echo 'Rust'
+    rustc --version 2>/dev/null || echo '  rustc: (not found)'
+    cargo --version 2>/dev/null || echo '  cargo: (not found)'
+    echo ''
+    echo 'Java'
+    javac -version 2>&1 || echo '  javac: (not found)'
+    if command -v mvn >/dev/null 2>&1; then mvn -version 2>/dev/null | head -n1; else echo '  maven: (not found)'; fi
+    if command -v gradle >/dev/null 2>&1; then gradle --version 2>/dev/null | head -n1; else echo '  gradle: (not found)'; fi
+    echo ''
+    echo 'Ruby'
+    ruby --version 2>/dev/null || echo '  (not found)'
+    echo ''
+    echo 'PHP'
+    if command -v php >/dev/null 2>&1; then php --version 2>/dev/null | head -n1; else echo '  php: (not found)'; fi
+    echo ''
+    echo '.NET'
+    dotnet --version 2>/dev/null || echo '  (not found)'
+    echo ''
+    echo 'C/C++'
+    if command -v gcc >/dev/null 2>&1; then gcc --version 2>/dev/null | head -n1; else echo '  gcc: (not found)'; fi
     echo ''
     echo 'CLI tools'
     if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo '  gh: not found'; fi

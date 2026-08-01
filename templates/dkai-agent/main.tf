@@ -195,7 +195,7 @@ resource "coder_agent" "main" {
       "Exec = /usr/bin/true" \
       >/etc/pacman.d/hooks/detect-old-perl-modules.hook
     pacman -Sy --needed --noconfirm --disable-sandbox \
-      apparmor bash binutils curl git kubectl kubectx nano nodejs unzip zstd
+      apparmor bash binutils curl dotnet-sdk gcc git go gradle jdk-openjdk kubectl kubectx maven nano nodejs php pnpm python ruby rust unzip uv zstd
     # Git 2.35+: "dubious ownership" when .git owner != invoking user (NFS root_squash → nobody, or root in a coder-owned tree).
     git config --system --add safe.directory '*' 2>/dev/null || true
     # Coder often sets GIT_ASKPASS for git; neutralize so gh/glab credential helpers can supply HTTPS tokens.
@@ -510,6 +510,35 @@ WORKERHELPER
     echo ""
     echo "Node.js"
     node -v 2>/dev/null || echo "  (not found)"
+    if command -v pnpm >/dev/null 2>&1; then pnpm -v 2>/dev/null | sed "s/^/  pnpm: v/"; else echo "  pnpm: (not found)"; fi
+    echo ""
+    echo "Python"
+    python3 --version 2>/dev/null || echo "  (not found)"
+    if command -v uv >/dev/null 2>&1; then uv --version 2>/dev/null | head -n1; else echo "  uv: (not found)"; fi
+    echo ""
+    echo "Go"
+    go version 2>/dev/null || echo "  (not found)"
+    echo ""
+    echo "Rust"
+    rustc --version 2>/dev/null || echo "  rustc: (not found)"
+    cargo --version 2>/dev/null || echo "  cargo: (not found)"
+    echo ""
+    echo "Java"
+    javac -version 2>&1 || echo "  javac: (not found)"
+    if command -v mvn >/dev/null 2>&1; then mvn -version 2>/dev/null | head -n1; else echo "  maven: (not found)"; fi
+    if command -v gradle >/dev/null 2>&1; then gradle --version 2>/dev/null | head -n1; else echo "  gradle: (not found)"; fi
+    echo ""
+    echo "Ruby"
+    ruby --version 2>/dev/null || echo "  (not found)"
+    echo ""
+    echo "PHP"
+    if command -v php >/dev/null 2>&1; then php --version 2>/dev/null | head -n1; else echo "  php: (not found)"; fi
+    echo ""
+    echo ".NET"
+    dotnet --version 2>/dev/null || echo "  (not found)"
+    echo ""
+    echo "C/C++"
+    if command -v gcc >/dev/null 2>&1; then gcc --version 2>/dev/null | head -n1; else echo "  gcc: (not found)"; fi
     echo ""
     echo "CLI tools"
     if command -v gh >/dev/null 2>&1; then gh version 2>/dev/null | head -n1; else echo "  gh: not found"; fi
