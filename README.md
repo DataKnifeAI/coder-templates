@@ -1,5 +1,8 @@
 # Coder Templates
 
+![Coder workspace templates](docs/assets/coder-templates-hero.jpg)
+
+
 Custom [Coder](https://coder.com) workspace templates for DataKnife. Templates are written in Terraform and define the underlying infrastructure that Coder workspaces run on.
 
 ## Overview
