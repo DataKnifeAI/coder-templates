@@ -24,6 +24,7 @@ Fork of **DKAI Arch** (`dkai-arch`) with the same Arch Linux base, AppArmor sand
   - **`CURSOR_WORKER_DIR`** — git repo root for the worker (default `/home/coder/agent-workspace` when the template clones `cursor_worker_git_url`).
   - **`CURSOR_WORKER_LABELS_FILE`** — optional JSON/TOML labels for the worker.
   - **`CURSOR_WORKER_MANAGEMENT_ADDR`** — e.g. `:8080` for `/metrics`, `/healthz`, `/readyz` on the worker.
+- **Slashbay pull** (orthogonal to Cloud Agent): workspace parameters **`slashbay_url`** and **`slashbay_worker_token`** inject **`SLASHBAY_URL`** / **`SLASHBAY_WORKER_TOKEN`** via `coder_env` (same pattern as `cursor_api_key`). When both are set, startup writes **`/home/coder/bin/slashbay-pull`** and `nohup`s it. The loop claims a job, clones `git_url` into **`/home/coder/agent-workspace/git/<repo>/`**, runs **`agent -p`**, and reports progress. Logs: **`/tmp/slashbay-pull.log`**. Pid: **`/tmp/slashbay-pull.pid`**. Do **not** put **`CODER_TOKEN`** in the workspace. The worker token is a pool secret, not a Cursor account. Keep **`start-cursor-worker`**.
 - **Example labels file**: `~/.cursor-worker-labels.json.example` (copy and customize).
 
 Workers only need **outbound HTTPS**; no inbound ports are required.
@@ -67,9 +68,18 @@ The **`coder`** binary stores global config under **`~/.config/coderv2`** (or **
 
 The idle timeout is **`cursor_worker_idle_timeout`** (seconds).
 
+### Slashbay warm pullers (2–5)
+
+For [Slashbay](https://github.com/DataKnifeAI/slashbay) issue jobs, create a few **already running** workspaces from this template (do not create one workspace per issue):
+
+1. Set **`slashbay_url`** to the Slashbay API (`https://slashbay.dataknife.net` or `http://slashbay.slashbay.svc.cluster.local`).
+2. Set **`slashbay_worker_token`** to the same `SLASHBAY_WORKER_TOKEN` pool secret on every warm workspace.
+3. Set **`cursor_api_key`** so `agent -p` can run (one named human seat).
+4. Startup starts **`slashbay-pull`** in the background. Check **`/tmp/slashbay-pull.log`**.
+
 ## Relationship to DKAI Arch
 
-Same Kubernetes layout (Deployment + **two** PVCs on `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, `kubectl`, `rancher`, `terraform`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds worker parameters, `coder_env` + end-of-startup autostart when **`cursor_api_key`** is set, `start-cursor-worker`, and related docs.
+Same Kubernetes layout (Deployment + **two** PVCs on `truenas-csi-nfs`, pod anti-affinity) and startup behavior (pacman, `gh`/`glab`, `kubectl`, `rancher`, `terraform`, Cursor sandbox `.deb` extract, `coder` CLI). Unlike **DKAI Arch**, this template does **not** include the `coder/cursor` registry module (no **Open in Cursor Desktop** app in Coder). Adds worker parameters, `coder_env` + end-of-startup autostart when **`cursor_api_key`** is set, `start-cursor-worker`, optional **`slashbay-pull`** when Slashbay params are set, and related docs.
 
 ## Prerequisites
 
@@ -94,6 +104,7 @@ coder login <your-coder-url>   # if needed
 coder show <workspace-name>    # e.g. copper-penguin-94 — check agent is connected / healthy
 coder ssh <workspace-name> -- sh -c 'pgrep -af "agent worker|./coder agent"; test -n "$CURSOR_API_KEY" && echo CURSOR_API_KEY=set || echo CURSOR_API_KEY=missing'
 coder ssh <workspace-name> -- sh -c 'tail -100 /tmp/cursor-worker.log 2>&1'
+coder ssh <workspace-name> -- sh -c 'tail -100 /tmp/slashbay-pull.log 2>&1'
 ```
 
 If **`CURSOR_API_KEY`** is missing in that SSH session, set the **`cursor_api_key`** workspace parameter or `export` it and run **`start-cursor-worker`** manually from `/home/coder/agent-workspace` (or your **`CURSOR_WORKER_DIR`**).
