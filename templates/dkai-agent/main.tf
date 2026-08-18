@@ -141,6 +141,31 @@ data "coder_parameter" "cursor_api_key" {
   })
 }
 
+data "coder_parameter" "slashbay_url" {
+  name         = "slashbay_url"
+  display_name = "Slashbay URL"
+  description  = "Optional. Slashbay API base URL for the pull queue (e.g. https://slashbay.dataknife.net). When set with slashbay_worker_token, Coder injects SLASHBAY_URL via coder_env and auto-starts /home/coder/bin/slashbay-pull. Not a Coder token."
+  type         = "string"
+  form_type    = "input"
+  default      = ""
+  mutable      = true
+  icon         = "/icon/github.svg"
+}
+
+data "coder_parameter" "slashbay_worker_token" {
+  name         = "slashbay_worker_token"
+  display_name = "Slashbay worker token"
+  description  = "Optional. Pool secret (SLASHBAY_WORKER_TOKEN) shared by warm dkai-agent pullers. Injected via coder_env when set. Not a Cursor account and not CODER_TOKEN."
+  type         = "string"
+  form_type    = "input"
+  default      = ""
+  mutable      = true
+  icon         = "/emojis/1f511.png"
+  styling = jsonencode({
+    mask_input = true
+  })
+}
+
 provider "kubernetes" {
   # Authenticate via ~/.kube/config or a Coder-specific ServiceAccount, depending on admin preferences
   config_path = var.use_kubeconfig == true ? "~/.kube/config" : null
@@ -480,6 +505,145 @@ WORKERHELPER
     # NFS / root_squash: chown may fail; 0755 still lets the coder user run the script as "other"
     _chown_coder coder:coder /home/coder/bin/start-cursor-worker 2>/dev/null || true
     ln -sf /home/coder/bin/start-cursor-worker /usr/local/bin/start-cursor-worker 2>/dev/null || true
+    cat > /home/coder/bin/slashbay-pull <<'PULLHELPER'
+#!/usr/bin/env bash
+set -euo pipefail
+# Slashbay puller: claim a queued job and run agent -p. Do not start agent worker.
+# Do not use VAR:-default brace expansion here: Terraform parses dollar-brace in startup_script.
+SB_URL=$(printenv SLASHBAY_URL 2>/dev/null || true)
+SB_TOKEN=$(printenv SLASHBAY_WORKER_TOKEN 2>/dev/null || true)
+WS_NAME=$(printenv CODER_WORKSPACE_NAME 2>/dev/null || true)
+if [ -z "$WS_NAME" ]; then
+  WS_NAME=$(hostname)
+fi
+if [ -z "$SB_URL" ] || [ -z "$SB_TOKEN" ]; then
+  echo "SLASHBAY_URL and SLASHBAY_WORKER_TOKEN required" >&2
+  exit 1
+fi
+SB_URL=$(printf '%s' "$SB_URL" | sed 's|/*$||')
+IDLE_SECS=15
+GIT_ROOT=/home/coder/agent-workspace/git
+export HOME=/home/coder USER=coder LOGNAME=coder
+
+job_field() {
+  python3 -c 'import json,sys
+d=json.load(open("/tmp/slashbay-claim.json"))
+k=sys.argv[1]
+v=d.get(k,"")
+if isinstance(v,list):
+    print(" ".join(str(x) for x in v))
+else:
+    print(v)' "$1"
+}
+
+post_json() {
+  path=$1
+  body=$2
+  curl -sS -o /tmp/slashbay-api.out -w '%%{http_code}' \
+    -X POST \
+    -H "Authorization: Bearer $SB_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$body" \
+    "$SB_URL$path" || true
+}
+
+progress() {
+  job_id=$1
+  status=$2
+  body=$(python3 -c 'import json,sys
+print(json.dumps({"status": sys.argv[1], "workspace": sys.argv[2]}))' "$status" "$WS_NAME")
+  post_json "/v1/jobs/$job_id/progress" "$body" >/dev/null
+}
+
+complete() {
+  job_id=$1
+  ok=$2
+  text=$3
+  body=$(python3 -c 'import json,sys
+ok=sys.argv[1]=="1"
+payload={"ok": ok, "workspace": sys.argv[3]}
+if ok:
+    payload["summary"]=sys.argv[2]
+else:
+    payload["error"]=sys.argv[2]
+print(json.dumps(payload))' "$ok" "$text" "$WS_NAME")
+  post_json "/v1/jobs/$job_id/complete" "$body" >/dev/null
+}
+
+echo "slashbay-pull: workspace=$WS_NAME url=$SB_URL"
+while true; do
+  set +e
+  code=$(curl -sS -o /tmp/slashbay-claim.json -w '%%{http_code}' \
+    -H "Authorization: Bearer $SB_TOKEN" \
+    -H "X-Slashbay-Workspace: $WS_NAME" \
+    "$SB_URL/v1/jobs/claim?workspace=$WS_NAME")
+  curl_rc=$?
+  set -e
+  if [ "$curl_rc" -ne 0 ] || [ "$code" = "204" ] || [ -z "$code" ]; then
+    sleep "$IDLE_SECS"
+    continue
+  fi
+  if [ "$code" != "200" ]; then
+    echo "slashbay-pull: claim HTTP $code"
+    sleep "$IDLE_SECS"
+    continue
+  fi
+  job_id=$(job_field id)
+  prompt=$(job_field prompt)
+  git_url=$(job_field git_url)
+  if [ -z "$job_id" ]; then
+    echo "slashbay-pull: claim body missing id"
+    sleep "$IDLE_SECS"
+    continue
+  fi
+  echo "slashbay-pull: claimed $job_id"
+  progress "$job_id" cloning
+  repo=$(printf '%s' "$git_url" | sed 's|/*$||; s|.*/||; s|\.git$||')
+  dest="$GIT_ROOT/$repo"
+  mkdir -p "$GIT_ROOT"
+  set +e
+  if [ -n "$git_url" ] && [ -n "$repo" ]; then
+    if [ -d "$dest/.git" ]; then
+      git -C "$dest" fetch --all --prune && git -C "$dest" pull --ff-only
+    else
+      git clone "$git_url" "$dest"
+    fi
+    clone_rc=$?
+  else
+    mkdir -p "$dest"
+    clone_rc=0
+  fi
+  set -e
+  if [ "$clone_rc" -ne 0 ]; then
+    complete "$job_id" 0 "git clone failed"
+    sleep "$IDLE_SECS"
+    continue
+  fi
+  cd "$dest" || cd /home/coder
+  progress "$job_id" agent_running
+  (
+    while true; do
+      sleep 60
+      progress "$job_id" agent_running
+    done
+  ) &
+  hb=$!
+  set +e
+  agent -p "$prompt"
+  agent_rc=$?
+  set -e
+  kill "$hb" 2>/dev/null || true
+  wait "$hb" 2>/dev/null || true
+  if [ "$agent_rc" -eq 0 ]; then
+    complete "$job_id" 1 "agent -p finished"
+  else
+    complete "$job_id" 0 "agent -p exited $agent_rc"
+  fi
+done
+PULLHELPER
+    chmod 0755 /home/coder/bin/slashbay-pull 2>/dev/null || true
+    _chown_coder coder:coder /home/coder/bin/slashbay-pull 2>/dev/null || true
+    ln -sf /home/coder/bin/slashbay-pull /usr/local/bin/slashbay-pull 2>/dev/null || true
     if [ ! -f /home/coder/.cursor-worker-labels.json.example ]; then
       printf "%s\n" \
         "{" \
@@ -568,6 +732,12 @@ WORKERHELPER
     echo "  Or run manually: start-cursor-worker"
     echo "  (idle-release-timeout defaults from workspace parameter cursor_worker_idle_timeout)"
     echo ""
+    echo "=== Slashbay pull (issue queue; orthogonal to Cloud Agent worker) ==="
+    echo "  Set slashbay_url + slashbay_worker_token to auto-start slashbay-pull"
+    echo "  Logs: /tmp/slashbay-pull.log  pid: /tmp/slashbay-pull.pid"
+    echo "  Or run manually: slashbay-pull"
+    echo "  Do not put CODER_TOKEN in this workspace"
+    echo ""
     echo "=== Other CLI (gh/glab auth is shared: /home/coder and /root use the same PVC paths) ==="
     echo "  GitHub:  gh auth login   # ok as coder or root; Cursor agent uses HOME=/home/coder"
     echo "  GitLab:  glab auth login"
@@ -607,6 +777,20 @@ WORKERHELPER
       echo "cursor_worker: CURSOR_API_KEY not set; set workspace parameter cursor_api_key to auto-start worker"
     else
       echo "cursor_worker: helper missing at /home/coder/bin/start-cursor-worker"
+    fi
+    if [ -n "$${SLASHBAY_URL:-}" ] && [ -n "$${SLASHBAY_WORKER_TOKEN:-}" ] && [ -x /home/coder/bin/slashbay-pull ]; then
+      if [ -f /tmp/slashbay-pull.pid ]; then
+        read -r oldpid < /tmp/slashbay-pull.pid 2>/dev/null || oldpid=
+        [ -n "$${oldpid}" ] && kill "$${oldpid}" 2>/dev/null || true
+        rm -f /tmp/slashbay-pull.pid
+      fi
+      export HOME=/home/coder USER=coder LOGNAME=coder
+      nohup /home/coder/bin/slashbay-pull >>/tmp/slashbay-pull.log 2>&1 & echo $$! >/tmp/slashbay-pull.pid
+      echo "slashbay_pull: started in background (log: /tmp/slashbay-pull.log, pid: /tmp/slashbay-pull.pid)"
+    elif [ -z "$${SLASHBAY_URL:-}" ] || [ -z "$${SLASHBAY_WORKER_TOKEN:-}" ]; then
+      echo "slashbay_pull: set slashbay_url and slashbay_worker_token to auto-start puller"
+    else
+      echo "slashbay_pull: helper missing at /home/coder/bin/slashbay-pull"
     fi
   EOT
 
@@ -674,6 +858,20 @@ resource "coder_env" "cursor_api_key" {
   agent_id = coder_agent.main.id
   name     = "CURSOR_API_KEY"
   value    = data.coder_parameter.cursor_api_key.value
+}
+
+resource "coder_env" "slashbay_url" {
+  count    = trimspace(data.coder_parameter.slashbay_url.value) != "" ? 1 : 0
+  agent_id = coder_agent.main.id
+  name     = "SLASHBAY_URL"
+  value    = data.coder_parameter.slashbay_url.value
+}
+
+resource "coder_env" "slashbay_worker_token" {
+  count    = trimspace(data.coder_parameter.slashbay_worker_token.value) != "" ? 1 : 0
+  agent_id = coder_agent.main.id
+  name     = "SLASHBAY_WORKER_TOKEN"
+  value    = data.coder_parameter.slashbay_worker_token.value
 }
 
 resource "kubernetes_persistent_volume_claim_v1" "home" {
